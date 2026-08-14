@@ -4,14 +4,30 @@
 
 # librechat-patches
 
-A thin overlay on the official [LibreChat](https://github.com/danny-avila/LibreChat)
-image. Each patch takes a value that upstream hardcodes and makes it
-configurable — **without changing the default**.
+## Why this exists
 
-**This is not a fork and not a distribution.** We track upstream release for
-release, we carry as few patched files as we can, and every patch here is
-written so it could be merged upstream unchanged. If you can run stock
-LibreChat, run stock LibreChat.
+Running [LibreChat](https://github.com/danny-avila/LibreChat) for an enterprise
+customer keeps hitting the same wall: a value that has to be configurable for
+this deployment is hardcoded upstream, applied to every endpoint, with no
+environment variable and no config key to reach it.
+
+These are rarely controversial changes. Usually somebody has already asked for
+them, and often somebody has already written the patch. What is missing is a
+merge. The requests behind patch 001 have been open since **April 2025** and
+**December 2025**; the related pull request is still a draft.
+
+That is a perfectly reasonable pace for a project maintained by two people. It
+is not a pace you can put in front of a customer who needs the setting next
+week.
+
+So this repository is the shortcut. We apply the change ourselves, in a form
+narrow enough that the shortcut stays cheap — and we offer the same change
+upstream, so that one day we can delete it again.
+
+## What it is
+
+A thin overlay on the official image. Each patch takes a value that upstream
+hardcodes and makes it configurable — **without changing the default**.
 
 ```dockerfile
 FROM ghcr.io/danny-avila/librechat-api:v0.8.7
@@ -20,6 +36,11 @@ COPY patches/001-image-resize/resize.js /app/api/server/services/Files/images/re
 
 That is the whole mechanism. No source fork, no rebased branch, no build of the
 application itself.
+
+**This is not a fork and not a distribution.** We track upstream release for
+release, we carry as few patched files as we can, and every patch here is
+written so it could be merged upstream unchanged. If you can run stock
+LibreChat, run stock LibreChat.
 
 ## Patches
 
@@ -76,8 +97,13 @@ interpreter.
 ## Contributing
 
 Maintained for our own deployments. Issues and pull requests are welcome, but
-there is no promised response time. If a patch here lands upstream, we delete it
-from this repository.
+there is no promised response time.
+
+If you are hitting the same wall — some value your deployment needs to configure
+and upstream does not expose — a patch here is a reasonable place to put it,
+provided it follows the rule above. And please open or upvote the upstream issue
+too. **The goal is to empty this repository, not to grow it.** Every patch that
+lands upstream gets deleted here.
 
 ## Licence
 
