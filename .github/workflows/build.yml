@@ -1,0 +1,137 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'patches/**'
+      - 'test/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/dpa-plus/librechat-api
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Der ARG-Standardwert im Dockerfile ist die einzige Quelle der Wahrheit
+      # fuer die Basisversion. Kein zweiter Ort, der veralten kann.
+      - name: Basisversion aus dem Dockerfile lesen
+        id: base
+        run: |
+          BASE=$(grep -m1 '^ARG LIBRECHAT_VERSION=' Dockerfile | cut -d= -f2)
+          if [ -z "$BASE" ]; then echo "::error::ARG LIBRECHAT_VERSION nicht gefunden"; exit 1; fi
+          echo "version=$BASE" >> $GITHUB_OUTPUT
+          echo "Basis: $BASE"
+
+      - name: Patches gegen upstream pruefen
+        run: |
+          BASE="${{ steps.base.outputs.version }}"
+          FAIL=0
+          for dir in patches/*/; do
+            name=$(basename "$dir")
+            [ -f "$dir/upstream.sha256" ] || { echo "::error::$name: upstream.sha256 fehlt"; FAIL=1; continue; }
+            # Pfad der Originaldatei steht in der ersten **File:**-Zeile des READMEs
+            rel=$(grep -m1 '^\*\*File:\*\*' "$dir/README.md" | sed 's|.*`\(.*\)`.*|\1|')
+            [ -n "$rel" ] || { echo "::error::$name: **File:** im README fehlt"; FAIL=1; continue; }
+            url="https://raw.githubusercontent.com/danny-avila/LibreChat/$BASE/$rel"
+            if ! curl -fsSL "$url" -o /tmp/upstream.js; then
+              echo "::error::$name: $url nicht abrufbar"; FAIL=1; continue
+            fi
+            have=$(sha256sum /tmp/upstream.js | cut -d' ' -f1)
+            want=$(tr -d '[:space:]' < "$dir/upstream.sha256")
+            if [ "$have" != "$want" ]; then
+              echo "::error::$name: Originaldatei in $BASE weicht ab. Erwartet $want, gefunden $have. Patch muss nachgezogen werden."
+              FAIL=1
+            else
+              echo "  $name: Original unveraendert ($BASE)"
+            fi
+          done
+          exit $FAIL
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image bauen (lokal, fuer den Smoke-Test)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: librechat-patched:test
+          build-args: LIBRECHAT_VERSION=${{ steps.base.outputs.version }}
+
+      - name: Smoke-Test
+        run: ./test/smoke.sh librechat-patched:test
+
+      - name: Naechsten dpa-Tag ermitteln
+        id: tag
+        if: github.event_name != 'pull_request'
+        run: |
+          BASE="${{ steps.base.outputs.version }}"
+          N=$(git tag -l "${BASE}-dpa.*" | sed "s|${BASE}-dpa.||" | grep -E '^[0-9]+$' | sort -n | tail -1)
+          NEXT=$(( ${N:-0} + 1 ))
+          echo "tag=${BASE}-dpa.${NEXT}" >> $GITHUB_OUTPUT
+          echo "Naechster Tag: ${BASE}-dpa.${NEXT}"
+
+      - name: An GHCR anmelden
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bauen und veroeffentlichen
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: LIBRECHAT_VERSION=${{ steps.base.outputs.version }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.IMAGE }}:${{ steps.base.outputs.version }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Tag setzen
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.tag.outputs.tag }}" -m "Basis ${{ steps.base.outputs.version }}, Patches: $(ls patches | tr '\n' ' ')"
+          git push origin "${{ steps.tag.outputs.tag }}"
+
+      - name: Zusammenfassung
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            echo "## ${{ steps.tag.outputs.tag }}"
+            echo ""
+            echo "Basis: \`ghcr.io/danny-avila/librechat-api:${{ steps.base.outputs.version }}\`"
+            echo ""
+            echo "Patches: $(ls patches | tr '\n' ' ')"
+            echo ""
+            echo "Ausrollen (bewusster Schritt):"
+            echo '```bash'
+            echo "docker compose pull && docker compose up -d"
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
