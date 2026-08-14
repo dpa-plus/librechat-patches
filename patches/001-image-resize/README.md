@@ -32,21 +32,27 @@ The maintainer has confirmed this is deliberate:
 The numbers come from OpenAI's 2023 vision specification. They are applied to
 custom endpoints too, including models that accept far more.
 
-## Why it matters here
+## Why it matters
 
-A DIN A0 drawing (9934 × 4962 px at 300 dpi) is reduced to **1538 × 768**. A
-2.5 mm room label — perfectly legible in the source — ends up about 4.6 px high.
-Azure Document Intelligence documents 12 px as its minimum, AWS Textract 15 px.
-The image is unusable before any model is involved, and the failure is silent:
-no error, no warning, just a worse answer.
+Large-format technical drawings are the clearest case. A sheet in ISO A0 at
+300 dpi is roughly 9900 × 4950 px. After upload it is **1538 × 768**. Labelling
+that is 2.5 mm tall on the sheet — perfectly legible in the source — ends up
+around 4.6 px high.
 
-Measured on real customer uploads:
+For comparison, Azure Document Intelligence documents 12 px as its minimum text
+height and AWS Textract 15 px. So the image is unusable before any model is
+involved, and the failure is silent: no error, no warning, just a worse answer.
 
-| | source | after upload |
+Aspect ratio decides how badly it hurts, because the cap applies to the short
+side:
+
+| source (300 dpi) | after upload | scale |
 |---|---|---|
-| Plan-Grundriss_1.OG.png | high-res PNG export | 1538 × 768 |
-| Plan-Grundriss_EG.png | high-res PNG export | 1538 × 768 |
-| Plan-Grundriss_UG.png | high-res PNG export | 1086 × 768 |
+| A0 landscape, ~2:1 | 1538 × 768 | 0.155 |
+| A1 portrait, ~1.4:1 | 1086 × 768 | 0.22 |
+
+The same applies to high-resolution scans, dense screenshots, and photographed
+documents — anywhere the detail that matters is small relative to the sheet.
 
 ## What this patch changes
 

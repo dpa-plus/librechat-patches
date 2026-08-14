@@ -130,8 +130,8 @@ jobs:
             echo ""
             echo "Patches: $(ls patches | tr '\n' ' ')"
             echo ""
-            echo "Ausrollen (bewusster Schritt):"
+            echo "Rolling this out stays a separate, deliberate step:"
             echo '```bash'
-            echo "ssh 006-fd-invest 'cd /root/dpa/librechat && docker compose pull && docker compose up -d'"
+            echo "docker compose pull && docker compose up -d"
             echo '```'
           } >> $GITHUB_STEP_SUMMARY
