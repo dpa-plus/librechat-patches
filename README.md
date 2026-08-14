@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/readme-assets/hero.png" alt="librechat-patches — a thin overlay on the official LibreChat image" width="100%">
+</p>
+
 # librechat-patches
 
 A thin overlay on the official [LibreChat](https://github.com/danny-avila/LibreChat)
