@@ -1,0 +1,106 @@
+name: upstream-check
+
+# Woechentlich pruefen, ob es eine neue LibreChat-Version gibt und ob unsere
+# gepatchten Dateien darin veraendert wurden. Ergebnis ist entweder ein PR, der
+# nur den Basis-Tag hochzieht, oder ein Issue mit dem Diff. Nie ein Deployment.
+on:
+  schedule:
+    - cron: '17 6 * * 1' # montags 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Aktuelle und neueste Version ermitteln
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT=$(grep -m1 '^ARG LIBRECHAT_VERSION=' Dockerfile | cut -d= -f2)
+          # Neuester Release-Tag, Vorabversionen eingeschlossen: LibreChat
+          # veroeffentlicht regelmaessig -rc-Staende, und wir laufen selbst auf einem.
+          LATEST=$(gh api repos/danny-avila/LibreChat/releases --jq '.[0].tag_name')
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "latest=$LATEST" >> $GITHUB_OUTPUT
+          echo "aktuell: $CURRENT / neueste: $LATEST"
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Gepatchte Dateien in der neuen Version vergleichen
+        if: steps.v.outputs.changed == 'true'
+        id: diff
+        run: |
+          LATEST="${{ steps.v.outputs.latest }}"
+          DRIFT=0
+          REPORT=""
+          for dir in patches/*/; do
+            name=$(basename "$dir")
+            rel=$(grep -m1 '^\*\*File:\*\*' "$dir/README.md" | sed 's|.*`\(.*\)`.*|\1|')
+            url="https://raw.githubusercontent.com/danny-avila/LibreChat/$LATEST/$rel"
+            if ! curl -fsSL "$url" -o /tmp/new.js; then
+              REPORT="${REPORT}- **$name**: \`$rel\` in \`$LATEST\` nicht abrufbar (verschoben oder entfernt?)\n"
+              DRIFT=1; continue
+            fi
+            have=$(sha256sum /tmp/new.js | cut -d' ' -f1)
+            want=$(tr -d '[:space:]' < "$dir/upstream.sha256")
+            if [ "$have" != "$want" ]; then
+              REPORT="${REPORT}- **$name**: \`$rel\` hat sich geaendert (\`${want:0:12}\` -> \`${have:0:12}\`)\n"
+              DRIFT=1
+            else
+              REPORT="${REPORT}- $name: unveraendert\n"
+            fi
+          done
+          echo "drift=$DRIFT" >> $GITHUB_OUTPUT
+          printf 'report<<EOF\n%b\nEOF\n' "$REPORT" >> $GITHUB_OUTPUT
+
+      # Fall A: nichts hat sich geaendert -> PR, der nur den Basis-Tag hochzieht.
+      - name: PR fuer den Versionssprung
+        if: steps.v.outputs.changed == 'true' && steps.diff.outputs.drift == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.v.outputs.latest }}"
+          BRANCH="upstream/$LATEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1 && { echo "Branch existiert bereits"; exit 0; }
+          git checkout -b "$BRANCH"
+          sed -i "s|^ARG LIBRECHAT_VERSION=.*|ARG LIBRECHAT_VERSION=$LATEST|" Dockerfile
+          git commit -qam "chore: Basis auf $LATEST heben"
+          git push -q origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Basis auf $LATEST heben" \
+            --body "$(printf 'Upstream hat **%s** veroeffentlicht (bisher: %s).\n\nAlle gepatchten Originaldateien sind darin **unveraendert**:\n\n%b\nDer Build-Workflow prueft die Pruefsummen erneut und laesst den Smoke-Test laufen. Ist er gruen, kann gemergt werden.\n\nAusrollen bleibt ein separater, bewusster Schritt.' "$LATEST" "${{ steps.v.outputs.current }}" "${{ steps.diff.outputs.report }}")"
+
+      # Fall B: eine gepatchte Datei hat sich geaendert -> Issue, Mensch noetig.
+      - name: Issue bei Abweichung
+        if: steps.v.outputs.changed == 'true' && steps.diff.outputs.drift == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.v.outputs.latest }}"
+          TITLE="Patch nachziehen: $LATEST veraendert gepatchte Dateien"
+          gh issue list --state open --search "$TITLE in:title" --json title --jq '.[].title' | grep -qxF "$TITLE" && { echo "Issue existiert bereits"; exit 0; }
+          gh issue create --title "$TITLE" \
+            --body "$(printf 'Upstream hat **%s** veroeffentlicht (bisher: %s). Mindestens eine von uns gepatchte Datei hat sich geaendert:\n\n%b\n**Vorgehen**\n\n1. Neue Originaldatei ziehen und mit unserer Fassung vergleichen.\n2. Aenderung von upstream uebernehmen, unseren Patch erneut anwenden.\n3. `upstream.sha256` aktualisieren.\n4. `ARG LIBRECHAT_VERSION` im Dockerfile heben.\n\nNicht einfach den Basis-Tag hochziehen: unsere Kopie wuerde sonst die Aenderung von upstream stillschweigend ueberschreiben.' "$LATEST" "${{ steps.v.outputs.current }}" "${{ steps.diff.outputs.report }}")"
+
+      - name: Zusammenfassung
+        run: |
+          {
+            echo "## upstream-check"
+            echo ""
+            echo "- aktuelle Basis: \`${{ steps.v.outputs.current }}\`"
+            echo "- neueste Version: \`${{ steps.v.outputs.latest }}\`"
+            echo "- neue Version vorhanden: ${{ steps.v.outputs.changed }}"
+          } >> $GITHUB_STEP_SUMMARY
