@@ -47,12 +47,14 @@ jobs:
           for dir in patches/*/; do
             name=$(basename "$dir")
             changed=""
-            # Jeder Patch nennt seine eigene Basisversion; ohne Angabe gilt die des Images.
-            ref=$(grep -m1 '^\\*\\*Base:\\*\\*' "$dir/README.md" | sed 's/.*Base:\\*\\* *//' | cut -d' ' -f1)
-            [ -n "$ref" ] || ref="$LATEST"
+            # Hier wird bewusst gegen die NEUESTE Version geprueft, nicht gegen
+            # die Basis des Patches. Die hinterlegte Pruefsumme ist die der
+            # Basis; die Frage lautet also genau: hat sich die Datei seitdem
+            # geaendert. Das gilt auch fuer nicht angewendete Patches, deren
+            # Diff-Datei sonst still veraltet.
             while read -r want rel; do
               [ -n "$rel" ] || continue
-              url="https://raw.githubusercontent.com/danny-avila/LibreChat/$ref/$rel"
+              url="https://raw.githubusercontent.com/danny-avila/LibreChat/$LATEST/$rel"
               if ! curl -fsSL "$url" -o /tmp/new.file; then
                 changed="${changed}    - \`$rel\` nicht abrufbar (verschoben oder entfernt?)\n"; continue
               fi

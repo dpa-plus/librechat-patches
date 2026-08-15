@@ -50,22 +50,28 @@ jobs:
             # nicht unbemerkt veraltet.
             applied=$(grep -m1 '^\*\*Applied:\*\*' "$dir/README.md" | sed 's/.*Applied:\*\* *//' | cut -d' ' -f1)
             # Jeder Patch nennt seine eigene Basisversion; ohne Angabe gilt die des Images.
-            ref=$(grep -m1 '^\\*\\*Base:\\*\\*' "$dir/README.md" | sed 's/.*Base:\\*\\* *//' | cut -d' ' -f1)
+            # Ohne das wuerde 002 (Basis v0.8.7) gegen die Image-Basis geprueft
+            # und meldete Abweichungen, die zwischen den Versionen legitim sind.
+            ref=$(grep -m1 '^\*\*Base:\*\*' "$dir/README.md" | sed 's/.*Base:\*\* *//' | cut -d' ' -f1)
             [ -n "$ref" ] || ref="$BASE"
             while read -r want rel; do
               [ -n "$rel" ] || continue
               url="https://raw.githubusercontent.com/danny-avila/LibreChat/$ref/$rel"
-              if ! curl -fsSL "$url" -o /tmp/upstream.file; then
-                echo "::error::$name: $rel in $BASE nicht abrufbar"; FAIL=1; continue
+              if curl -fsSL "$url" -o /tmp/upstream.file; then
+                have=$(sha256sum /tmp/upstream.file | cut -d' ' -f1)
+                [ "$have" = "$want" ] && continue
+                msg="$rel weicht in $ref ab"
+              else
+                msg="$rel in $ref nicht abrufbar"
               fi
-              have=$(sha256sum /tmp/upstream.file | cut -d' ' -f1)
-              if [ "$have" != "$want" ]; then
-                if [ "$applied" = "yes" ]; then
-                  echo "::error::$name: $rel weicht in $BASE ab. Patch muss nachgezogen werden."
-                  FAIL=1
-                else
-                  echo "::warning::$name (nicht angewendet): $rel weicht in $BASE ab. Diff-Datei veraltet."
-                fi
+              # Nur ein angewendeter Patch darf den Build rot machen. Bei einem
+              # nicht angewendeten reicht die Warnung, dass seine Diff-Datei
+              # veraltet ist.
+              if [ "$applied" = "yes" ]; then
+                echo "::error::$name: $msg. Patch muss nachgezogen werden."
+                FAIL=1
+              else
+                echo "::warning::$name (nicht angewendet): $msg."
               fi
             done < "$dir/upstream.sha256"
             echo "  $name geprueft (applied=$applied)"
