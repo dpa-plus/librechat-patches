@@ -44,21 +44,31 @@ jobs:
           for dir in patches/*/; do
             name=$(basename "$dir")
             [ -f "$dir/upstream.sha256" ] || { echo "::error::$name: upstream.sha256 fehlt"; FAIL=1; continue; }
-            # Pfad der Originaldatei steht in der ersten **File:**-Zeile des READMEs
-            rel=$(grep -m1 '^\*\*File:\*\*' "$dir/README.md" | sed 's|.*`\(.*\)`.*|\1|')
-            [ -n "$rel" ] || { echo "::error::$name: **File:** im README fehlt"; FAIL=1; continue; }
-            url="https://raw.githubusercontent.com/danny-avila/LibreChat/$BASE/$rel"
-            if ! curl -fsSL "$url" -o /tmp/upstream.js; then
-              echo "::error::$name: $url nicht abrufbar"; FAIL=1; continue
-            fi
-            have=$(sha256sum /tmp/upstream.js | cut -d' ' -f1)
-            want=$(tr -d '[:space:]' < "$dir/upstream.sha256")
-            if [ "$have" != "$want" ]; then
-              echo "::error::$name: Originaldatei in $BASE weicht ab. Erwartet $want, gefunden $have. Patch muss nachgezogen werden."
-              FAIL=1
-            else
-              echo "  $name: Original unveraendert ($BASE)"
-            fi
+            # Ein Patch, der nicht ins Image kopiert wird (z. B. weil er einen
+            # Client-Build braeuchte), darf den Build nicht rot machen. Sein
+            # Basisstand wird trotzdem geprueft, damit die hinterlegte Diff-Datei
+            # nicht unbemerkt veraltet.
+            applied=$(grep -m1 '^\*\*Applied:\*\*' "$dir/README.md" | sed 's/.*Applied:\*\* *//' | cut -d' ' -f1)
+            # Jeder Patch nennt seine eigene Basisversion; ohne Angabe gilt die des Images.
+            ref=$(grep -m1 '^\\*\\*Base:\\*\\*' "$dir/README.md" | sed 's/.*Base:\\*\\* *//' | cut -d' ' -f1)
+            [ -n "$ref" ] || ref="$BASE"
+            while read -r want rel; do
+              [ -n "$rel" ] || continue
+              url="https://raw.githubusercontent.com/danny-avila/LibreChat/$ref/$rel"
+              if ! curl -fsSL "$url" -o /tmp/upstream.file; then
+                echo "::error::$name: $rel in $BASE nicht abrufbar"; FAIL=1; continue
+              fi
+              have=$(sha256sum /tmp/upstream.file | cut -d' ' -f1)
+              if [ "$have" != "$want" ]; then
+                if [ "$applied" = "yes" ]; then
+                  echo "::error::$name: $rel weicht in $BASE ab. Patch muss nachgezogen werden."
+                  FAIL=1
+                else
+                  echo "::warning::$name (nicht angewendet): $rel weicht in $BASE ab. Diff-Datei veraltet."
+                fi
+              fi
+            done < "$dir/upstream.sha256"
+            echo "  $name geprueft (applied=$applied)"
           done
           exit $FAIL
 

@@ -46,16 +46,21 @@ jobs:
           REPORT=""
           for dir in patches/*/; do
             name=$(basename "$dir")
-            rel=$(grep -m1 '^\*\*File:\*\*' "$dir/README.md" | sed 's|.*`\(.*\)`.*|\1|')
-            url="https://raw.githubusercontent.com/danny-avila/LibreChat/$LATEST/$rel"
-            if ! curl -fsSL "$url" -o /tmp/new.js; then
-              REPORT="${REPORT}- **$name**: \`$rel\` in \`$LATEST\` nicht abrufbar (verschoben oder entfernt?)\n"
-              DRIFT=1; continue
-            fi
-            have=$(sha256sum /tmp/new.js | cut -d' ' -f1)
-            want=$(tr -d '[:space:]' < "$dir/upstream.sha256")
-            if [ "$have" != "$want" ]; then
-              REPORT="${REPORT}- **$name**: \`$rel\` hat sich geaendert (\`${want:0:12}\` -> \`${have:0:12}\`)\n"
+            changed=""
+            # Jeder Patch nennt seine eigene Basisversion; ohne Angabe gilt die des Images.
+            ref=$(grep -m1 '^\\*\\*Base:\\*\\*' "$dir/README.md" | sed 's/.*Base:\\*\\* *//' | cut -d' ' -f1)
+            [ -n "$ref" ] || ref="$LATEST"
+            while read -r want rel; do
+              [ -n "$rel" ] || continue
+              url="https://raw.githubusercontent.com/danny-avila/LibreChat/$ref/$rel"
+              if ! curl -fsSL "$url" -o /tmp/new.file; then
+                changed="${changed}    - \`$rel\` nicht abrufbar (verschoben oder entfernt?)\n"; continue
+              fi
+              have=$(sha256sum /tmp/new.file | cut -d' ' -f1)
+              [ "$have" = "$want" ] || changed="${changed}    - \`$rel\` (\`${want:0:12}\` -> \`${have:0:12}\`)\n"
+            done < "$dir/upstream.sha256"
+            if [ -n "$changed" ]; then
+              REPORT="${REPORT}- **$name**: geaendert\n${changed}"
               DRIFT=1
             else
               REPORT="${REPORT}- $name: unveraendert\n"

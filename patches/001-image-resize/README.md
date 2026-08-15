@@ -1,6 +1,8 @@
 # 001 — configurable image resize ceilings
 
 **File:** `api/server/services/Files/images/resize.js`
+**Applied:** yes
+**Base:** v0.8.6-rc1
 **Upstream status:** open — [discussion #6777](https://github.com/danny-avila/LibreChat/discussions/6777) (Apr 2025), [discussion #11065](https://github.com/danny-avila/LibreChat/discussions/11065) (Dec 2025), [issue #6776](https://github.com/danny-avila/LibreChat/issues/6776)
 
 ## What upstream does

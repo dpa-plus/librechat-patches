@@ -44,9 +44,16 @@ LibreChat, run stock LibreChat.
 
 ## Patches
 
-| # | File | What it opens up | Upstream |
+| # | What it opens up | Applied | Upstream |
 |---|---|---|---|
-| [001](./patches/001-image-resize) | `services/Files/images/resize.js` | Image resize ceilings (512 / 768 / 2000 / 1568) via `IMAGE_MAX_*` | [#6777](https://github.com/danny-avila/LibreChat/discussions/6777), [#11065](https://github.com/danny-avila/LibreChat/discussions/11065) — open |
+| [001](./patches/001-image-resize) | Image resize ceilings (512 / 768 / 2000 / 1568) via `IMAGE_MAX_*` | yes | [#6777](https://github.com/danny-avila/LibreChat/discussions/6777), [#11065](https://github.com/danny-avila/LibreChat/discussions/11065) — open |
+| [002](./patches/002-upload-methods) | Which upload methods the attachment menu offers, per endpoint and per model spec | **no** | [PR #11279](https://github.com/danny-avila/LibreChat/pull/11279) — draft |
+
+**Applied: no** means the patch is kept here but not built into the image. 002
+changes client code, and the official image ships only the compiled bundle, so
+applying it needs a full client build rather than a file overlay. The base
+checksums are still verified on every run so the stored diff cannot go stale
+unnoticed.
 
 ## The rule every patch follows
 
