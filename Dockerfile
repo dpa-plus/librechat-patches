@@ -23,11 +23,14 @@ RUN git clone --depth 1 --branch "${LIBRECHAT_VERSION}" \
 COPY patches/002-upload-routing/002-upload-routing.patch /tmp/002.patch
 COPY patches/003-table-copy/003-table-copy.patch /tmp/003.patch
 COPY patches/004-video-tool-uploads/004-video-tool-uploads.patch /tmp/004.patch
+COPY patches/005-reasoning-toggle/005-reasoning-toggle.patch /tmp/005.patch
 # --check first: a patch that no longer applies must fail the build loudly here,
 # not produce a silently unpatched bundle further down.
+# 005 last: it patches files 002 and 003 already touched.
 RUN git apply --check /tmp/002.patch && git apply /tmp/002.patch \
  && git apply --check /tmp/003.patch && git apply /tmp/003.patch \
- && git apply --check /tmp/004.patch && git apply /tmp/004.patch
+ && git apply --check /tmp/004.patch && git apply /tmp/004.patch \
+ && git apply --check /tmp/005.patch && git apply /tmp/005.patch
 
 RUN npm ci --no-audit --no-fund
 # Builds data-provider, data-schemas, api, client-package and finally the client.
@@ -41,6 +44,11 @@ FROM ghcr.io/danny-avila/librechat-api:${LIBRECHAT_VERSION}
 # 001 — configurable image resize ceilings (IMAGE_MAX_*). Server-side, a plain
 # file swap.
 COPY patches/001-image-resize/resize.js /app/api/server/services/Files/images/resize.js
+
+# 005 — reasoning toggle, server half: re-attach the validated user
+# `reasoning_effort` after model-spec enforcement, gated by
+# `interface.reasoningToggle`. Same file-swap mechanism as 001.
+COPY patches/005-reasoning-toggle/buildEndpointOption.js /app/api/server/middleware/buildEndpointOption.js
 
 # 002 — configurable upload methods. The compiled client, plus data-provider:
 # the schema and the resolution helper live there, and the server reads them
@@ -59,4 +67,4 @@ LABEL org.opencontainers.image.title="librechat-api (dpa-plus overlay)" \
       org.opencontainers.image.source="https://github.com/dpa-plus/librechat-patches" \
       org.opencontainers.image.licenses="MIT" \
       eu.dpa.librechat.base-version="${LIBRECHAT_VERSION}" \
-      eu.dpa.librechat.patches="001-image-resize,002-upload-routing,003-table-copy,004-video-tool-uploads"
+      eu.dpa.librechat.patches="001-image-resize,002-upload-routing,003-table-copy,004-video-tool-uploads,005-reasoning-toggle"

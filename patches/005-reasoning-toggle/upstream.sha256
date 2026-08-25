@@ -1,0 +1,6 @@
+6b0d41771431bf657bfbc258f3013a5d2448b765e6bf4b3fab73c97f19d60ba3  client/src/components/Chat/Input/BadgeRow.tsx
+1378dafed55b8578dab813d64ae4c38830ae17eec0ae393dfd3fc7611556eab8  packages/data-provider/src/config.ts
+3eda4a4d7867f6b82af13c1251dbc8c1a046fec6ee42000d09a05398ab56bc66  packages/data-schemas/src/app/interface.ts
+3b51fb99b6a7e4728b4a762a405c188214e302aa1a1207cfa318635546ffa229  client/src/locales/en/translation.json
+52dc2c17075cc82fd7f976c9df49c8588ad8d6f27c3957a4316f123824a263c5  client/src/locales/de/translation.json
+0fa24093910ddb45c223aeb7b89fb7eb1cf77903e302bd720d0604d63e594317  api/server/middleware/buildEndpointOption.js

@@ -1,0 +1,157 @@
+diff --git a/api/server/middleware/buildEndpointOption.js b/api/server/middleware/buildEndpointOption.js
+index 84fb85d..b132199 100644
+--- a/api/server/middleware/buildEndpointOption.js
++++ b/api/server/middleware/buildEndpointOption.js
+@@ -121,6 +121,25 @@ async function buildEndpointOption(req, res, next) {
+     }
+   }
+ 
++  /**
++   * Patch 005 (off unless `interface.reasoningToggle: true`): spec enforcement
++   * above rebuilds the body from the preset and drops the user's
++   * `reasoning_effort`. When the deployment explicitly offers the composer
++   * toggle, the validated user signal is re-attached — but never over a value
++   * the spec preset itself defines, so the admin's preset stays authoritative.
++   */
++  if (!isAgents && appConfig?.interfaceConfig?.reasoningToggle === true) {
++    const userEffort = req.body.reasoning_effort;
++    const validEfforts = new Set(['none', 'minimal', 'low', 'medium', 'high']);
++    if (
++      typeof userEffort === 'string' &&
++      validEfforts.has(userEffort) &&
++      parsedBody.reasoning_effort === undefined
++    ) {
++      parsedBody.reasoning_effort = userEffort;
++    }
++  }
++
+   if (!isAgents && appliedModelSpecPrivateFields.has('promptPrefix')) {
+     parsedBody = resolveModelSpecPromptPrefixVariables(
+       parsedBody,
+diff --git a/client/src/components/Chat/Input/BadgeRow.tsx b/client/src/components/Chat/Input/BadgeRow.tsx
+index 7b7140c..fe4d4e4 100644
+--- a/client/src/components/Chat/Input/BadgeRow.tsx
++++ b/client/src/components/Chat/Input/BadgeRow.tsx
+@@ -16,6 +16,7 @@ import { BadgeRowProvider } from '~/Providers';
+ import ToolsDropdown from './ToolsDropdown';
+ import type { BadgeItem } from '~/common';
+ import { useChatBadges } from '~/hooks';
++import ReasoningToggle from './ReasoningToggle';
+ import ToolDialogs from './ToolDialogs';
+ import FileSearch from './FileSearch';
+ import Artifacts from './Artifacts';
+@@ -371,6 +372,7 @@ function BadgeRow({
+         )}
+         {showEphemeralBadges === true && (
+           <>
++            <ReasoningToggle />
+             <WebSearch />
+             <CodeInterpreter />
+             <FileSearch />
+diff --git a/client/src/components/Chat/Input/ReasoningToggle.tsx b/client/src/components/Chat/Input/ReasoningToggle.tsx
+new file mode 100644
+index 0000000..f88d56e
+--- /dev/null
++++ b/client/src/components/Chat/Input/ReasoningToggle.tsx
+@@ -0,0 +1,47 @@
++import React, { memo, useCallback } from 'react';
++import { Lightbulb } from 'lucide-react';
++import { CheckboxButton } from '@librechat/client';
++import { ReasoningEffort } from 'librechat-data-provider';
++import { useLocalize, useSetIndexOptions } from '~/hooks';
++import { useGetStartupConfig } from '~/data-provider';
++import { useChatContext } from '~/Providers';
++
++/**
++ * Patch 005. A composer badge that sets `reasoning_effort: high` on the
++ * conversation — the same field the (spec-hidden) parameters panel would set,
++ * so the existing request pipeline carries it to the provider unchanged.
++ * Off unless the deployment sets `interface.reasoningToggle: true`; unset
++ * renders nothing, exactly upstream behavior.
++ */
++function ReasoningToggle() {
++  const localize = useLocalize();
++  const { conversation } = useChatContext();
++  const { setOption } = useSetIndexOptions();
++  const { data: startupConfig } = useGetStartupConfig();
++
++  const checked = conversation?.reasoning_effort === ReasoningEffort.high;
++
++  const handleChange = useCallback(
++    ({ value }: { value: boolean }) => {
++      setOption('reasoning_effort')(value ? ReasoningEffort.high : null);
++    },
++    [setOption],
++  );
++
++  if (startupConfig?.interface?.reasoningToggle !== true) {
++    return null;
++  }
++
++  return (
++    <CheckboxButton
++      className="max-w-fit"
++      checked={checked}
++      setValue={handleChange}
++      label={localize('com_ui_reasoning_toggle')}
++      isCheckedClassName="border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10"
++      icon={<Lightbulb className="icon-md" aria-hidden="true" />}
++    />
++  );
++}
++
++export default memo(ReasoningToggle);
+diff --git a/client/src/locales/de/translation.json b/client/src/locales/de/translation.json
+index 4d3a34f..d7fe96d 100644
+--- a/client/src/locales/de/translation.json
++++ b/client/src/locales/de/translation.json
+@@ -1437,6 +1437,7 @@
+   "com_ui_read_aloud": "Vorlesen",
+   "com_ui_read_file": "{{0}} gelesen",
+   "com_ui_reading_file": "{{0}} wird gelesen",
++  "com_ui_reasoning_toggle": "Gründlich nachdenken",
+   "com_ui_redirect_uri": "Weiterleitungs-URI",
+   "com_ui_redirect_uri_instructions": "Kopiere diese Weiterleitungs-URI und konfiguriere sie in deinen OAuth-Anbietereinstellungen.",
+   "com_ui_redirecting_to_provider": "Weiterleitung zu {{0}}, einen Moment bitte...",
+diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
+index 22196d2..a779eb5 100644
+--- a/client/src/locales/en/translation.json
++++ b/client/src/locales/en/translation.json
+@@ -1927,5 +1927,6 @@
+   "com_ui_zoom_out": "Zoom out",
+   "com_ui_upload_no_options": "No upload option is available for these files here. Try a different file type, or check the upload settings for this model.",
+   "com_ui_upload_no_options_partial": "Some files have no upload option here and were skipped: {{0}}",
++  "com_ui_reasoning_toggle": "Think thoroughly",
+   "com_user_message": "You"
+ }
+diff --git a/packages/data-provider/src/config.ts b/packages/data-provider/src/config.ts
+index 87e2159..71bec87 100644
+--- a/packages/data-provider/src/config.ts
++++ b/packages/data-provider/src/config.ts
+@@ -1174,6 +1174,13 @@ export const interfaceSchema = z
+      * upstream does.
+      */
+     tableCopy: z.boolean().optional(),
++    /**
++     * Composer badge that sets `reasoning_effort: high` on the conversation —
++     * the field the parameters panel would set if model specs did not hide it.
++     * Off by default: an unconfigured deployment shows the composer exactly as
++     * upstream does.
++     */
++    reasoningToggle: z.boolean().optional(),
+     parameters: z.boolean().optional(),
+     multiConvo: z.boolean().optional(),
+     bookmarks: z.boolean().optional(),
+diff --git a/packages/data-schemas/src/app/interface.ts b/packages/data-schemas/src/app/interface.ts
+index 6d2964f..797c142 100644
+--- a/packages/data-schemas/src/app/interface.ts
++++ b/packages/data-schemas/src/app/interface.ts
+@@ -43,6 +43,8 @@ export async function loadDefaultInterface({
+      * removeNullishValues, and the client renders the upstream table.
+      */
+     tableCopy: interfaceConfig?.tableCopy,
++    /** Patch 005. Same contract as tableCopy: unset means absent. */
++    reasoningToggle: interfaceConfig?.reasoningToggle,
+     autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
+     buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
+     contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,
