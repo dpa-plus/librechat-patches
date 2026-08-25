@@ -26,16 +26,24 @@ upstream, so that one day we can delete it again.
 
 ## What it is
 
-A thin overlay on the official image. Each patch takes a value that upstream
-hardcodes and makes it configurable — **without changing the default**.
+A build of the official LibreChat image with a small set of patches applied.
+Each patch either makes a hardcoded value configurable or puts a better
+behaviour behind a switch — and in both cases, **an image with no configuration
+set behaves exactly like the one it was built from.**
 
 ```dockerfile
-FROM ghcr.io/danny-avila/librechat-api:v0.8.7
-COPY patches/001-image-resize/resize.js /app/api/server/services/Files/images/resize.js
+FROM node:24-alpine AS client
+RUN git clone --depth 1 --branch ${LIBRECHAT_VERSION} .../LibreChat.git .
+RUN git apply /tmp/002-upload-routing.patch && npm ci && npm run frontend
+
+FROM ghcr.io/danny-avila/librechat-api:${LIBRECHAT_VERSION}
+COPY patches/001-image-resize/resize.js /app/api/server/...
+COPY --from=client /src/client/dist /app/client/dist
 ```
 
-That is the whole mechanism. No source fork, no rebased branch, no build of the
-application itself.
+Server-side patches are a file swap. Client-side ones are not: the official
+image ships only the compiled bundle, so the client is rebuilt from source at
+the same tag. That is why this repository builds rather than merely copies.
 
 **This is not a fork and not a distribution.** We track upstream release for
 release, we carry as few patched files as we can, and every patch here is
@@ -44,31 +52,41 @@ LibreChat, run stock LibreChat.
 
 ## Patches
 
-| # | What it opens up | Applied | Upstream |
-|---|---|---|---|
-| [001](./patches/001-image-resize) | Image resize ceilings (512 / 768 / 2000 / 1568) via `IMAGE_MAX_*` | yes | [#6777](https://github.com/danny-avila/LibreChat/discussions/6777), [#11065](https://github.com/danny-avila/LibreChat/discussions/11065) — open |
-| [002](./patches/002-upload-methods) | Which upload methods the attachment menu offers, per endpoint and per model spec | **no** | [PR #11279](https://github.com/danny-avila/LibreChat/pull/11279) — draft |
-
-**Applied: no** means the patch is kept here but not built into the image. 002
-changes client code, and the official image ships only the compiled bundle, so
-applying it needs a full client build rather than a file overlay. The base
-checksums are still verified on every run so the stored diff cannot go stale
-unnoticed.
+| # | Type | What it does | Applied | Upstream |
+|---|---|---|---|---|
+| [001](./patches/001-image-resize) | A | Image resize ceilings (512 / 768 / 2000 / 1568) via `IMAGE_MAX_*` | yes | [#6777](https://github.com/danny-avila/LibreChat/discussions/6777), [#11065](https://github.com/danny-avila/LibreChat/discussions/11065) — open |
+| [002](./patches/002-upload-routing) | A + B | Which upload methods the attachment menu offers, per endpoint and per model spec; optionally drops the choice entirely and routes by file type | yes | [PR #11279](https://github.com/danny-avila/LibreChat/pull/11279) — draft |
 
 ## The rule every patch follows
 
-> **A patch may make something configurable. It may never change behaviour.**
+> **An image with no configuration set behaves exactly like the official image
+> it was built from.**
 
-With no environment variables set, a patched image must behave byte-for-byte
-like the upstream image it is built from. This is not a style preference, it is
-what keeps the overlay small enough to maintain:
+That is the whole contract, and it admits two kinds of patch:
 
-- it can be offered upstream as-is, because it costs existing users nothing;
+**Type A — makes something configurable.** A value upstream hardcodes becomes an
+environment variable or a config key, with the upstream number as the default.
+Patch 001 is this.
+
+**Type B — changes behaviour, behind an off-by-default switch.** Sometimes the
+upstream behaviour is not a value to tune but a decision to make differently.
+Those patches are allowed, provided the new behaviour has to be turned on. Patch
+002 is this: with `autoRoute` unset, the attachment menu is upstream's, key for
+key.
+
+The earlier wording of this rule was "a patch may never change behaviour". That
+was a shorthand for the contract above, and it turned out to be too narrow: it
+forbade fixing a decision that is simply wrong for a given deployment, while
+adding nothing the contract does not already guarantee.
+
+What the contract buys, and why we keep it:
+
+- a patch can be offered upstream as-is, because it costs existing users
+  nothing;
 - it cannot silently diverge from upstream behaviour;
-- and it keeps deployment-specific values in `.env` where they belong, instead
-  of in a patched source file.
+- and backing a change out is one line of configuration, not a rollback.
 
-The test for any proposed patch is simply: *would upstream accept this?* If the
+The test for any proposed patch is still: *would upstream accept this?* If the
 answer is no, it is not a patch — it belongs in configuration, or in a sidecar
 service alongside LibreChat.
 

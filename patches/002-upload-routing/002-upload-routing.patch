@@ -132,7 +132,7 @@ index 89bd49f..096e0e8 100644
      return (
        <AttachFile
 diff --git a/client/src/components/Chat/Input/Files/AttachFileMenu.tsx b/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
-index 952b337..fc61b1e 100644
+index 952b337..a61fd2c 100644
 --- a/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
 +++ b/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
 @@ -1,13 +1,6 @@
@@ -149,7 +149,7 @@ index 952b337..fc61b1e 100644
  import {
    FileUpload,
    TooltipAnchor,
-@@ -16,15 +9,14 @@ import {
+@@ -16,15 +9,17 @@ import {
    SharePointIcon,
  } from '@librechat/client';
  import {
@@ -161,13 +161,16 @@ index 952b337..fc61b1e 100644
    bedrockDocumentExtensions,
 -  isDocumentSupportedProvider,
 +  getAvailableUploadOptions,
++  isAutoRouteEnabled,
++  resolveUploadForFile,
++  groupRoutedFiles,
  } from 'librechat-data-provider';
 -import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
 +import type { EndpointFileConfig, TConversation, UploadFileType } from 'librechat-data-provider';
  import type { ExtendedFile, FileSetter } from '~/common';
  import {
    useAgentToolPermissions,
-@@ -34,6 +26,8 @@ import {
+@@ -34,19 +29,15 @@ import {
    useLocalize,
  } from '~/hooks';
  import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
@@ -176,29 +179,39 @@ index 952b337..fc61b1e 100644
  import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
  import { SharePointPickerDialog } from '~/components/SharePoint';
  import { useGetStartupConfig } from '~/data-provider';
-@@ -41,13 +35,6 @@ import { ephemeralAgentByConvoId } from '~/store';
+ import { ephemeralAgentByConvoId } from '~/store';
  import { MenuItemProps } from '~/common';
  import { cn } from '~/utils';
- 
+-
 -type FileUploadType =
 -  | 'image'
 -  | 'document'
 -  | 'image_document'
 -  | 'image_document_extended'
 -  | 'image_document_video_audio';
--
++import { useToastContext } from '@librechat/client';
+ 
  interface AttachFileMenuProps {
    agentId?: string | null;
-   endpoint?: string | null;
-@@ -76,7 +63,6 @@ const AttachFileMenu = ({
+@@ -76,7 +67,7 @@ const AttachFileMenu = ({
    conversation,
  }: AttachFileMenuProps) => {
    const localize = useLocalize();
 -  const isUploadDisabled = disabled ?? false;
++  const { showToast } = useToastContext();
    const inputRef = useRef<HTMLInputElement>(null);
    const [isPopoverActive, setIsPopoverActive] = useState(false);
    const uploadFileTooltip = useShortcutHint('uploadFile', localize('com_sidepanel_attach_files'));
-@@ -109,13 +95,19 @@ const AttachFileMenu = ({
+@@ -85,7 +76,7 @@ const AttachFileMenu = ({
+     ephemeralAgentByConvoId(conversationId),
+   );
+   const toolResourceRef = useRef<EToolResources | undefined>();
+-  const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
++  const { handleFileChange, handleFiles } = useFileHandlingNoChatContext(undefined, {
+     files,
+     setFiles,
+     setFilesLoading,
+@@ -109,13 +100,19 @@ const AttachFileMenu = ({
     * */
    const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
  
@@ -219,10 +232,31 @@ index 952b337..fc61b1e 100644
        if (!inputRef.current) {
          return;
        }
-@@ -144,105 +136,97 @@ const AttachFileMenu = ({
+@@ -144,105 +141,150 @@ const AttachFileMenu = ({
      [endpointFileConfig?.supportedMimeTypes],
    );
  
+-  const dropdownItems = useMemo(() => {
+-    const setToolResource = (value: EToolResources | undefined) => {
+-      toolResourceRef.current = value;
+-    };
++  /**
++   * Without a menu there is no entry to take the `accept` filter from, so the
++   * picker opens unfiltered and routing decides afterwards. Narrowing it here
++   * would have to guess a single file type for a button that stands for all of
++   * them, and would silently hide files the deployment does allow.
++   */
++  const handleAutoRouteClick = useCallback(() => {
++    if (!inputRef.current) {
++      return;
++    }
++    inputRef.current.value = '';
++    inputRef.current.accept = '';
++    inputRef.current.click();
++  }, []);
+ 
+-    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
+-      const items: MenuItemProps[] = [];
 +  /**
 +   * Single source of truth, shared with the drag-and-drop path.
 +   *
@@ -231,25 +265,21 @@ index 952b337..fc61b1e 100644
 +   * Rendering the menu from that would offer — and let the user execute — an
 +   * upload method the config removes, for as long as the query is in flight.
 +   */
-+  const uploadOptions = useMemo(
-+    () =>
-+      isReady
-+        ? getAvailableUploadOptions({
-+            endpoint,
-+            endpointType,
-+            provider,
-+            useResponsesApi,
-+            contextCapabilityEnabled: capabilities.contextEnabled,
-+            fileSearchCapabilityEnabled: capabilities.fileSearchEnabled,
-+            codeCapabilityEnabled: capabilities.codeEnabled,
-+            fileSearchAllowedByAgent,
-+            codeAllowedByAgent,
-+            specUploadMethods,
-+            endpointUploadMethods,
-+          })
-+        : [],
++  const optionParams = useMemo(
++    () => ({
++      endpoint,
++      endpointType,
++      provider,
++      useResponsesApi,
++      contextCapabilityEnabled: capabilities.contextEnabled,
++      fileSearchCapabilityEnabled: capabilities.fileSearchEnabled,
++      codeCapabilityEnabled: capabilities.codeEnabled,
++      fileSearchAllowedByAgent,
++      codeAllowedByAgent,
++      specUploadMethods,
++      endpointUploadMethods,
++    }),
 +    [
-+      isReady,
 +      endpoint,
 +      endpointType,
 +      provider,
@@ -263,7 +293,27 @@ index 952b337..fc61b1e 100644
 +      endpointUploadMethods,
 +    ],
 +  );
-+
+ 
+-      let currentProvider = provider || endpoint;
++  const uploadOptions = useMemo(
++    () => (isReady ? getAvailableUploadOptions(optionParams) : []),
++    [isReady, optionParams],
++  );
+ 
+-      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+-      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+-        currentProvider = Providers.OPENROUTER;
+-      }
++  /**
++   * With `autoRoute` the button is not a menu. It opens the file picker, and the
++   * method is decided per file afterwards. Off unless configured.
++   */
++  const autoRoute = isReady && isAutoRouteEnabled(specUploadMethods, endpointUploadMethods);
+ 
+-      const isAzureWithResponsesApi =
+-        (currentProvider === EModelEndpoint.azureOpenAI ||
+-          endpointType === EModelEndpoint.azureOpenAI) &&
+-        useResponsesApi === true;
 +  /**
 +   * With no option left there is nothing to open: the popup would be an empty
 +   * box, and with SharePoint enabled its entry would still be there with an
@@ -271,29 +321,19 @@ index 952b337..fc61b1e 100644
 +   * item that does nothing. The trigger is disabled instead, which also covers
 +   * the window in which the configuration is still loading.
 +   */
-+  const hasUploadOptions = uploadOptions.length > 0;
-+  const isUploadDisabled = (disabled ?? false) || !hasUploadOptions;
-+
-   const dropdownItems = useMemo(() => {
-     const setToolResource = (value: EToolResources | undefined) => {
-       toolResourceRef.current = value;
-     };
++  /**
++   * Routes a picked selection and uploads it, one call per distinct method so
++   * the existing per-resource validation and batching still applies. Files no
++   * method can take are reported rather than pushed down a path that will fail.
++   */
++  const uploadRouted = useCallback(
++    (picked: File[]) => {
++      const routed = picked.map((file) => ({
++        file,
++        option: resolveUploadForFile({ name: file.name, type: file.type }, optionParams),
++      }));
++      const { groups, rejected } = groupRoutedFiles(routed);
  
--    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
--      const items: MenuItemProps[] = [];
--
--      let currentProvider = provider || endpoint;
--
--      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
--      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
--        currentProvider = Providers.OPENROUTER;
--      }
--
--      const isAzureWithResponsesApi =
--        (currentProvider === EModelEndpoint.azureOpenAI ||
--          endpointType === EModelEndpoint.azureOpenAI) &&
--        useResponsesApi === true;
--
 -      if (
 -        isDocumentSupportedProvider(endpointType) ||
 -        isDocumentSupportedProvider(currentProvider) ||
@@ -301,12 +341,7 @@ index 952b337..fc61b1e 100644
 -      ) {
 -        items.push({
 -          label: localize('com_ui_upload_provider'),
-+    const createMenuItems = (onAction: (fileType?: UploadFileType) => void) => {
-+      const items: MenuItemProps[] = uploadOptions.map((option) => {
-+        const { labelKey, icon } = uploadOptionPresentation[option.type];
-+        return {
-+          label: localize(labelKey),
-           onClick: () => {
+-          onClick: () => {
 -            setToolResource(undefined);
 -            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
 -            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
@@ -314,19 +349,9 @@ index 952b337..fc61b1e 100644
 -            } else if (
 -              currentProvider === Providers.BEDROCK ||
 -              endpointType === EModelEndpoint.bedrock
-+            setToolResource(option.toolResource);
-+            /** Only the two tool-backed options arm the ephemeral agent. */
-+            if (
-+              option.toolResource === EToolResources.file_search ||
-+              option.toolResource === EToolResources.execute_code
-             ) {
+-            ) {
 -              fileType = 'image_document_extended';
-+              const toolResource = option.toolResource;
-+              setEphemeralAgent((prev) => ({
-+                ...prev,
-+                [toolResource]: true,
-+              }));
-             }
+-            }
 -            onAction(fileType);
 -          },
 -          icon: <FileImageIcon className="icon-md" />,
@@ -337,12 +362,13 @@ index 952b337..fc61b1e 100644
 -          onClick: () => {
 -            setToolResource(undefined);
 -            onAction('image');
-+            onAction(option.fileType);
-           },
+-          },
 -          icon: <ImageUpIcon className="icon-md" />,
 -        });
--      }
--
++      if (rejected.length > 0) {
++        showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
+       }
+ 
 -      if (capabilities.contextEnabled) {
 -        items.push({
 -          label: localize('com_ui_upload_ocr_text'),
@@ -352,8 +378,20 @@ index 952b337..fc61b1e 100644
 -          },
 -          icon: <FileType2Icon className="icon-md" />,
 -        });
--      }
--
++      for (const group of groups) {
++        if (
++          group.toolResource === EToolResources.file_search ||
++          group.toolResource === EToolResources.execute_code
++        ) {
++          const toolResource = group.toolResource;
++          setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
++        }
++        handleFiles(group.files, group.toolResource);
+       }
++    },
++    [optionParams, handleFiles, setEphemeralAgent, showToast, localize],
++  );
+ 
 -      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
 -        items.push({
 -          label: localize('com_ui_upload_file_search'),
@@ -368,18 +406,43 @@ index 952b337..fc61b1e 100644
 -          icon: <FileSearch className="icon-md" />,
 -        });
 -      }
--
++  const hasUploadOptions = uploadOptions.length > 0;
++  const isUploadDisabled = (disabled ?? false) || !hasUploadOptions;
++
++  const dropdownItems = useMemo(() => {
++    const setToolResource = (value: EToolResources | undefined) => {
++      toolResourceRef.current = value;
++    };
+ 
 -      if (capabilities.codeEnabled && codeAllowedByAgent) {
 -        items.push({
 -          label: localize('com_ui_upload_code_environment'),
--          onClick: () => {
++    const createMenuItems = (onAction: (fileType?: UploadFileType) => void) => {
++      const items: MenuItemProps[] = uploadOptions.map((option) => {
++        const { labelKey, icon } = uploadOptionPresentation[option.type];
++        return {
++          label: localize(labelKey),
+           onClick: () => {
 -            setToolResource(EToolResources.execute_code);
 -            setEphemeralAgent((prev) => ({
 -              ...prev,
 -              [EToolResources.execute_code]: true,
 -            }));
 -            onAction();
--          },
++            setToolResource(option.toolResource);
++            /** Only the two tool-backed options arm the ephemeral agent. */
++            if (
++              option.toolResource === EToolResources.file_search ||
++              option.toolResource === EToolResources.execute_code
++            ) {
++              const toolResource = option.toolResource;
++              setEphemeralAgent((prev) => ({
++                ...prev,
++                [toolResource]: true,
++              }));
++            }
++            onAction(option.fileType);
+           },
 -          icon: <TerminalSquareIcon className="icon-md" />,
 -        });
 -      }
@@ -401,7 +464,7 @@ index 952b337..fc61b1e 100644
      if (sharePointEnabled) {
        const sharePointItems = createMenuItems(() => {
          setIsSharePointDialogOpen(true);
-@@ -260,16 +244,10 @@ const AttachFileMenu = ({
+@@ -260,19 +302,44 @@ const AttachFileMenu = ({
      return localItems;
    }, [
      localize,
@@ -419,17 +482,87 @@ index 952b337..fc61b1e 100644
      setIsSharePointDialogOpen,
    ]);
  
-@@ -317,7 +295,9 @@ const AttachFileMenu = ({
-         <DropdownPopup
-           menuId="attach-file-menu"
-           className="overflow-visible"
++  /**
++   * The same affordance without the menu: one button, one job. Ariakit's
++   * MenuButton is deliberately not reused here — it carries popup semantics
++   * (`aria-haspopup`, expanded state) that would announce a menu that no longer
++   * exists.
++   */
++  const plainTrigger = (
++    <TooltipAnchor
++      render={
++        <button
++          type="button"
++          disabled={isUploadDisabled}
++          id="attach-file-menu-button"
++          aria-label={localize('com_sidepanel_attach_files')}
++          aria-keyshortcuts={uploadFileAriaKey}
++          onClick={handleAutoRouteClick}
++          className={cn(
++            'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
++          )}
++        >
++          <div className="flex w-full items-center justify-center gap-2">
++            <AttachmentIcon />
++          </div>
++        </button>
++      }
++      id="attach-file-menu-button"
++      description={uploadFileTooltip}
++      disabled={isUploadDisabled}
++    />
++  );
++
+   const menuTrigger = (
+     <TooltipAnchor
+       render={
+@@ -310,21 +377,35 @@ const AttachFileMenu = ({
+       <FileUpload
+         ref={inputRef}
+         handleFileChange={(e) => {
++          if (autoRoute) {
++            const picked = Array.from(e.target.files ?? []);
++            e.target.value = '';
++            if (picked.length > 0) {
++              uploadRouted(picked);
++            }
++            return;
++          }
+           handleFileChange(e, toolResourceRef.current);
+           toolResourceRef.current = undefined;
+         }}
+       >
+-        <DropdownPopup
+-          menuId="attach-file-menu"
+-          className="overflow-visible"
 -          isOpen={isPopoverActive}
-+          /** Also closes a popup that was already open when the last option
-+           * disappeared, rather than leaving an empty box on screen. */
-+          isOpen={isPopoverActive && hasUploadOptions}
-           setIsOpen={setIsPopoverActive}
-           modal={true}
-           unmountOnHide={true}
+-          setIsOpen={setIsPopoverActive}
+-          modal={true}
+-          unmountOnHide={true}
+-          trigger={menuTrigger}
+-          items={dropdownItems}
+-          iconClassName="mr-0"
+-        />
++        {autoRoute ? (
++          plainTrigger
++        ) : (
++          <DropdownPopup
++            menuId="attach-file-menu"
++            className="overflow-visible"
++            /** Also closes a popup that was already open when the last option
++             * disappeared, rather than leaving an empty box on screen. */
++            isOpen={isPopoverActive && hasUploadOptions}
++            setIsOpen={setIsPopoverActive}
++            modal={true}
++            unmountOnHide={true}
++            trigger={menuTrigger}
++            items={dropdownItems}
++            iconClassName="mr-0"
++          />
++        )}
+       </FileUpload>
+       <SharePointPickerDialog
+         isOpen={isSharePointDialogOpen}
 diff --git a/client/src/components/Chat/Input/Files/DragDropModal.tsx b/client/src/components/Chat/Input/Files/DragDropModal.tsx
 index 103f732..0667527 100644
 --- a/client/src/components/Chat/Input/Files/DragDropModal.tsx
@@ -1510,10 +1643,10 @@ index 7fa4df5..8da5d55 100644
  export { default as useSharePointDownload } from './useSharePointDownload';
  export { default as useSharePointFileHandling } from './useSharePointFileHandling';
 diff --git a/client/src/hooks/Files/useDragHelpers.ts b/client/src/hooks/Files/useDragHelpers.ts
-index 847884c..eae2ce8 100644
+index 847884c..7740b7d 100644
 --- a/client/src/hooks/Files/useDragHelpers.ts
 +++ b/client/src/hooks/Files/useDragHelpers.ts
-@@ -1,28 +1,23 @@
+@@ -1,28 +1,24 @@
 -import { useState, useMemo, useCallback, useRef } from 'react';
 +import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
  import { useDrop } from 'react-dnd';
@@ -1533,6 +1666,7 @@ index 847884c..eae2ce8 100644
 -  AgentCapabilities,
 -  resolveEndpointType,
    isAssistantsEndpoint,
++  groupRoutedFiles,
    getEndpointFileConfig,
 -  defaultAgentCapabilities,
  } from 'librechat-data-provider';
@@ -1547,7 +1681,7 @@ index 847884c..eae2ce8 100644
  import useLocalize from '../useLocalize';
  
  export default function useDragHelpers() {
-@@ -31,17 +26,35 @@ export default function useDragHelpers() {
+@@ -31,17 +27,62 @@ export default function useDragHelpers() {
    const localize = useLocalize();
    const [showModal, setShowModal] = useState(false);
    const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
@@ -1582,14 +1716,41 @@ index 847884c..eae2ce8 100644
 +   * Reactive for exactly the files whose decision is still outstanding, so the
 +   * effect below re-runs the moment the configuration for them becomes known.
 +   */
-+  const { status, options, getOptionsForFiles } = useUploadOptions({
++  const { status, options, getOptionsForFiles, autoRoute, getRouteForFiles } = useUploadOptions({
 +    ...dragDropContext,
 +    files: pendingFiles,
 +  });
++
++  /**
++   * Uploads a drop without asking, one call per distinct method. Used only when
++   * `autoRoute` is configured; otherwise the dialog decides as before.
++   */
++  const uploadRouted = useCallback(
++    (dropped: File[]) => {
++      const { routed } = getRouteForFiles(dropped);
++      const { groups, rejected } = groupRoutedFiles(routed);
++
++      if (rejected.length > 0) {
++        showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
++      }
++
++      for (const group of groups) {
++        if (
++          group.toolResource === EToolResources.file_search ||
++          group.toolResource === EToolResources.execute_code
++        ) {
++          const toolResource = group.toolResource;
++          setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
++        }
++        handleFiles(group.files, group.toolResource);
++      }
++    },
++    [getRouteForFiles, handleFiles, setEphemeralAgent, showToast, localize],
++  );
  
    const handleOptionSelect = useCallback(
      (toolResource: EToolResources | undefined) => {
-@@ -61,35 +74,24 @@ export default function useDragHelpers() {
+@@ -61,35 +102,24 @@ export default function useDragHelpers() {
  
    /** Use refs to avoid re-creating the drop handler */
    const handleFilesRef = useRef(handleFiles);
@@ -1631,7 +1792,7 @@ index 847884c..eae2ce8 100644
          });
          if (endpointCfg?.disabled === true) {
            showToast({
-@@ -100,53 +102,76 @@ export default function useDragHelpers() {
+@@ -100,53 +130,86 @@ export default function useDragHelpers() {
          }
        }
  
@@ -1673,12 +1834,6 @@ index 847884c..eae2ce8 100644
 -      const allImages = item.files.every((f) =>
 -        inferMimeType(f.name, f.type)?.startsWith('image/'),
 -      );
--
--      const shouldShowModal =
--        allImages ||
--        (fileSearchEnabled && fileSearchAllowedByAgent) ||
--        (codeEnabled && codeAllowedByAgent) ||
--        contextEnabled;
 +      if (availableOptions.status === 'loading') {
 +        /**
 +         * The configuration is not known yet. Uploading now would be fail-open
@@ -1689,9 +1844,11 @@ index 847884c..eae2ce8 100644
 +        return;
 +      }
  
--      if (!shouldShowModal) {
--        // Fallback: directly handle files without showing modal
--        handleFilesRef.current(item.files);
+-      const shouldShowModal =
+-        allImages ||
+-        (fileSearchEnabled && fileSearchAllowedByAgent) ||
+-        (codeEnabled && codeAllowedByAgent) ||
+-        contextEnabled;
 +      if (availableOptions.options.length === 0) {
 +        /**
 +         * Nothing is on offer for these files. Rejecting is the only correct
@@ -1702,6 +1859,14 @@ index 847884c..eae2ce8 100644
 +          message: localize('com_ui_upload_no_options'),
 +          status: 'error',
 +        });
++        return;
++      }
+ 
+-      if (!shouldShowModal) {
+-        // Fallback: directly handle files without showing modal
+-        handleFilesRef.current(item.files);
++      if (autoRoute) {
++        uploadRouted(item.files);
          return;
        }
 +
@@ -1709,7 +1874,7 @@ index 847884c..eae2ce8 100644
        setShowModal(true);
      },
 -    [isAssistants, queryClient, showToast, localize],
-+    [isAssistants, queryClient, showToast, localize, getOptionsForFiles],
++    [isAssistants, queryClient, showToast, localize, getOptionsForFiles, autoRoute, uploadRouted],
    );
  
 +  /**
@@ -1734,9 +1899,14 @@ index 847884c..eae2ce8 100644
 +      return;
 +    }
 +
++    if (autoRoute) {
++      uploadRouted(pendingFiles);
++      return;
++    }
++
 +    setDraggedFiles(pendingFiles);
 +    setShowModal(true);
-+  }, [pendingFiles, status, options, showToast, localize]);
++  }, [pendingFiles, status, options, showToast, localize, autoRoute, uploadRouted]);
 +
    const [{ canDrop, isOver }, drop] = useDrop(
      () => ({
@@ -1831,13 +2001,18 @@ index 0000000..e0e8bb5
 +}
 diff --git a/client/src/hooks/Files/useUploadOptions.ts b/client/src/hooks/Files/useUploadOptions.ts
 new file mode 100644
-index 0000000..1b52535
+index 0000000..0a252d8
 --- /dev/null
 +++ b/client/src/hooks/Files/useUploadOptions.ts
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,208 @@
 +import { useMemo, useRef, useCallback } from 'react';
 +import { useRecoilValue } from 'recoil';
-+import { defaultAgentCapabilities, getAvailableUploadOptions } from 'librechat-data-provider';
++import {
++  defaultAgentCapabilities,
++  getAvailableUploadOptions,
++  resolveUploadForFile,
++  shouldAutoRoute,
++} from 'librechat-data-provider';
 +import type {
 +  EModelEndpoint,
 +  EndpointFileConfig,
@@ -1885,6 +2060,18 @@ index 0000000..1b52535
 +  options: UploadOption[];
 +}
 +
++/** One file and the method it should take, or `null` when nothing can take it. */
++export interface RoutedFile {
++  file: File;
++  option: UploadOption | null;
++}
++
++export interface RouteResult {
++  status: UploadOptionsStatus;
++  /** Only populated for `'ready'`. */
++  routed: RoutedFile[];
++}
++
 +export interface UseUploadOptionsResult extends UploadOptionsResult {
 +  /**
 +   * Same computation for a set of files that is only known at event time, e.g.
@@ -1896,6 +2083,16 @@ index 0000000..1b52535
 +   * path needs exactly that, since it never had a type check to begin with.
 +   */
 +  getOptionsForFiles: (files?: File[] | null) => UploadOptionsResult;
++  /**
++   * `true` when the deployment asked for the choice to be made for the user.
++   * Off unless configured, so an unconfigured instance keeps upstream's menu.
++   */
++  autoRoute: boolean;
++  /**
++   * Resolves each file to its own method. Routing per file matters: a drop can
++   * mix a spreadsheet and a PDF, and those do not belong on the same path.
++   */
++  getRouteForFiles: (files: File[]) => RouteResult;
 +}
 +
 +const noOptions: UploadOption[] = [];
@@ -1979,6 +2176,29 @@ index 0000000..1b52535
 +    };
 +  }, []);
 +
++  const getRouteForFiles = useCallback((filesToRoute: File[]): RouteResult => {
++    const { baseParams: params, isReady: ready } = latestRef.current;
++    if (!ready) {
++      return { status: latestRef.current.isUnavailable ? 'unavailable' : 'loading', routed: [] };
++    }
++    return {
++      status: 'ready',
++      routed: filesToRoute.map((file) => ({
++        file,
++        option: resolveUploadForFile({ name: file.name, type: file.type }, params),
++      })),
++    };
++  }, []);
++
++  const autoRoute = useMemo(
++    () =>
++      shouldAutoRoute({
++        specUploadMethods: baseParams.specUploadMethods,
++        endpointUploadMethods: baseParams.endpointUploadMethods,
++      }),
++    [baseParams.specUploadMethods, baseParams.endpointUploadMethods],
++  );
++
 +  const options = useMemo(
 +    () => (isReady ? getAvailableUploadOptions({ ...baseParams, files }) : noOptions),
 +    [baseParams, files, isReady],
@@ -1991,7 +2211,7 @@ index 0000000..1b52535
 +    status = 'unavailable';
 +  }
 +
-+  return { status, options, getOptionsForFiles };
++  return { status, options, getOptionsForFiles, autoRoute, getRouteForFiles };
 +}
 diff --git a/client/src/hooks/Input/useTextarea.paste.spec.tsx b/client/src/hooks/Input/useTextarea.paste.spec.tsx
 new file mode 100644
@@ -2343,7 +2563,7 @@ index 0000000..54bb109
 +  });
 +});
 diff --git a/client/src/hooks/Input/useTextarea.ts b/client/src/hooks/Input/useTextarea.ts
-index 0e54270..c5a3a2d 100644
+index 0e54270..685c743 100644
 --- a/client/src/hooks/Input/useTextarea.ts
 +++ b/client/src/hooks/Input/useTextarea.ts
 @@ -1,7 +1,9 @@
@@ -2353,7 +2573,7 @@ index 0e54270..c5a3a2d 100644
 +import { useToastContext } from '@librechat/client';
  import { useRecoilValue, useRecoilState } from 'recoil';
 -import type { TEndpointOption } from 'librechat-data-provider';
-+import { isAssistantsEndpoint } from 'librechat-data-provider';
++import { groupRoutedFiles, isAssistantsEndpoint } from 'librechat-data-provider';
 +import type { TEndpointOption, UploadOption } from 'librechat-data-provider';
  import type { KeyboardEvent } from 'react';
  import {
@@ -2393,7 +2613,7 @@ index 0e54270..c5a3a2d 100644
    const agentsMap = useAgentsMapContext();
    const { handleFiles } = useFileHandling();
    const assistantMap = useAssistantsMapContext();
-@@ -264,6 +278,84 @@ export default function useTextarea({
+@@ -264,6 +278,118 @@ export default function useTextarea({
      isComposing.current = false;
    };
  
@@ -2422,6 +2642,8 @@ index 0e54270..c5a3a2d 100644
 +    status: uploadOptionsStatus,
 +    options: pendingPasteOptions,
 +    getOptionsForFiles,
++    autoRoute,
++    getRouteForFiles,
 +  } = useUploadOptions(dragDropContext);
 +
 +  const rejectPastedFiles = useCallback(() => {
@@ -2431,6 +2653,31 @@ index 0e54270..c5a3a2d 100644
 +      status: 'error',
 +    });
 +  }, [setFilesLoading, showToast, localize]);
++
++  /**
++   * Routes a paste per file instead of assuming the direct branch. Only used
++   * when `autoRoute` is configured; without it the clipboard behaves as before.
++   */
++  const uploadRoutedPaste = useCallback(
++    (pasted: File[]) => {
++      const { routed } = getRouteForFiles(pasted);
++      const { groups, rejected } = groupRoutedFiles(routed);
++
++      if (groups.length === 0) {
++        rejectPastedFiles();
++        return;
++      }
++      if (rejected.length > 0) {
++        showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
++      }
++
++      setFilesLoading(true);
++      for (const group of groups) {
++        handleFiles(group.files, group.toolResource);
++      }
++    },
++    [getRouteForFiles, handleFiles, rejectPastedFiles, setFilesLoading, showToast, localize],
++  );
 +
 +  /**
 +   * Resolves a paste that arrived before the configuration did. Waits only on
@@ -2460,6 +2707,11 @@ index 0e54270..c5a3a2d 100644
 +
 +    setPendingPastedFiles(null);
 +
++    if (autoRoute) {
++      uploadRoutedPaste(pendingPastedFiles);
++      return;
++    }
++
 +    if (!hasDirectUploadOption(pendingPasteOptions)) {
 +      rejectPastedFiles();
 +      return;
@@ -2473,12 +2725,14 @@ index 0e54270..c5a3a2d 100644
 +    isAssistantsUpload,
 +    handleFiles,
 +    rejectPastedFiles,
++    autoRoute,
++    uploadRoutedPaste,
 +  ]);
 +
    const handlePaste = useCallback(
      (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
        const textArea = textAreaRef.current;
-@@ -277,7 +369,6 @@ export default function useTextarea({
+@@ -277,7 +403,6 @@ export default function useTextarea({
        }
  
        if (clipboardData.files.length > 0) {
@@ -2486,7 +2740,7 @@ index 0e54270..c5a3a2d 100644
          const timestampedFiles: File[] = [];
          for (const file of clipboardData.files) {
            const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
-@@ -285,10 +376,60 @@ export default function useTextarea({
+@@ -285,10 +410,67 @@ export default function useTextarea({
            });
            timestampedFiles.push(newFile);
          }
@@ -2527,6 +2781,11 @@ index 0e54270..c5a3a2d 100644
 +          return;
 +        }
 +
++        if (autoRoute) {
++          uploadRoutedPaste(timestampedFiles);
++          return;
++        }
++
 +        if (!hasDirectUploadOption(availableOptions.options)) {
 +          rejectPastedFiles();
 +          return;
@@ -2544,6 +2803,8 @@ index 0e54270..c5a3a2d 100644
 +      isAssistantsUpload,
 +      getOptionsForFiles,
 +      rejectPastedFiles,
++      autoRoute,
++      uploadRoutedPaste,
 +    ],
    );
  
@@ -2561,7 +2822,7 @@ index 81df389..dc7eb04 100644
    "com_ui_upload_provider": "Upload to Provider",
    "com_ui_upload_success": "Successfully uploaded file",
 diff --git a/librechat.example.yaml b/librechat.example.yaml
-index bfdcc60..9839832 100644
+index bfdcc60..4e2ff43 100644
 --- a/librechat.example.yaml
 +++ b/librechat.example.yaml
 @@ -710,6 +710,15 @@ endpoints:
@@ -2580,12 +2841,12 @@ index bfdcc60..9839832 100644
  #
  #     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
  #     - name: "llama3-70b-8192"
-@@ -777,6 +786,33 @@ endpoints:
+@@ -777,6 +786,41 @@ endpoints:
  #     YourCustomEndpointName:
  #       fileLimit: 2
  #       fileSizeLimit: 5
 +#       # Hides entries in the attachment menu and in the drag-and-drop dialog.
-+#       # Both keys default to true, and both can only REMOVE an entry, never add
++#       # All four keys default to true, and each can only REMOVE an entry, never add
 +#       # one: an option still has to pass its normal capability check first.
 +#       #
 +#       # THIS IS A SURFACE SWITCH, NOT A RESTRICTION. The server does not check
@@ -2611,6 +2872,14 @@ index bfdcc60..9839832 100644
 +#         # false hides "Upload as Text" (the `context` tool resource, which is
 +#         # text extraction or OCR depending on the file).
 +#         context: false
++#         # false hides "Upload for File Search" (the RAG index of the selected
++#         # agent).
++#         file_search: false
++#         # false hides "Upload to Code Environment" (the code interpreter
++#         # sandbox). Note the inverse case is the useful one: leaving this the
++#         # only enabled method is how an agent that works on spreadsheets stops
++#         # offering paths that fail for .xlsx.
++#         execute_code: true
  #   serverFileSizeLimit: 100  # Global server file size limit in MB
  #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
  #   imageGeneration: # Image Gen settings, either percentage or px
@@ -2867,17 +3136,17 @@ index b564f5a..9cf492d 100644
 +  });
 +});
 diff --git a/packages/data-provider/src/file-config.ts b/packages/data-provider/src/file-config.ts
-index 06f6b48..8082c0e 100644
+index 06f6b48..c48418e 100644
 --- a/packages/data-provider/src/file-config.ts
 +++ b/packages/data-provider/src/file-config.ts
-@@ -458,14 +458,118 @@ export const fileConfig = {
+@@ -458,14 +458,173 @@ export const fileConfig = {
  
  const supportedMimeTypesSchema = z.array(z.string()).optional();
  
 +/**
 + * Opt-out switches for the upload methods offered in the attachment menu.
 + *
-+ * Both entries default to `true`, i.e. omitting the object leaves the current
++ * All four entries default to `true`, i.e. omitting the object leaves the current
 + * behaviour untouched. They only ever remove an option, never add one: a method
 + * the provider cannot do is still not offered, no matter what is configured.
 + *
@@ -2907,22 +3176,60 @@ index 06f6b48..8082c0e 100644
 + *   intentional: the builder defines an agent, it is not the conversation
 + *   surface, and someone who may edit an agent may attach context files to it.
 + */
-+export const uploadMethodsSchema = z.object({
++export const uploadMethodsSchema = z
++  .object({
++    /**
++     * "Upload to Provider" — hand the raw file to the model.
++     *
++     * `false` removes the whole direct branch, i.e. both the document variant and
++     * the image-only variant. There is no fallback: the menu never swaps one direct
++     * upload for another.
++     */
++    provider: z.boolean().optional(),
++    /**
++     * "Upload as Text" — extract the text server-side and send that instead of the
++     * file. Depending on the file this is plain text extraction or OCR; the option
++     * maps to `EToolResources.context`, hence the name.
++     */
++    context: z.boolean().optional(),
++    /**
++     * "Upload for File Search" — put the file into the RAG index of the selected
++     * agent. Only ever offered when the `file_search` capability is enabled and
++     * the agent allows it; this key can take it away, never add it.
++     */
++    file_search: z.boolean().optional(),
++    /**
++     * "Upload to Code Environment" — hand the file to the code interpreter
++     * sandbox. Same rule: only ever offered when the `execute_code` capability is
++     * enabled and the agent allows it.
++     */
++    execute_code: z.boolean().optional(),
++    /**
++     * Drop the choice entirely and pick the method from the file itself.
++     *
++     * Off by default, and that default is the contract: with `autoRoute` unset the
++     * attachment menu, the drag-and-drop dialog and the clipboard path behave
++     * exactly as upstream. Switched on:
++     *
++     * - the attachment button opens the file picker directly, no menu;
++     * - a drop or a paste uploads straight away, no dialog;
++     * - each file is routed on its own, by MIME type and extension, through the
++     *   same {@link getAvailableUploadOptions} that would have populated the menu.
++     *
++     * A file with no remaining method is rejected with a message rather than sent
++     * down a path that cannot take it. Routing can only pick among methods that
++     * are already enabled — this switch never widens what is on offer.
++     */
++    autoRoute: z.boolean().optional(),
++  })
 +  /**
-+   * "Upload to Provider" — hand the raw file to the model.
-+   *
-+   * `false` removes the whole direct branch, i.e. both the document variant and
-+   * the image-only variant. There is no fallback: the menu never swaps one direct
-+   * upload for another.
++   * Strict on purpose. The tool switches on a model spec are camelCase
++   * (`fileSearch`, `executeCode`) while these are snake_case, matching
++   * `EToolResources`. Writing `fileSearch: false` in here is the obvious
++   * mistake, and a non-strict object would drop it without a word, leaving the
++   * option in the menu and no clue why. Better a loud config error at startup.
 +   */
-+  provider: z.boolean().optional(),
-+  /**
-+   * "Upload as Text" — extract the text server-side and send that instead of the
-+   * file. Depending on the file this is plain text extraction or OCR; the option
-+   * maps to `EToolResources.context`, hence the name.
-+   */
-+  context: z.boolean().optional(),
-+});
++  .strict();
 +
 +export type TUploadMethods = z.infer<typeof uploadMethodsSchema>;
 +
@@ -2941,11 +3248,28 @@ index 06f6b48..8082c0e 100644
 + *
 + * `undefined` at a level means "not configured here", so the next level decides.
 + */
++/**
++ * The four keys that name an upload method. `autoRoute` is deliberately not one
++ * of them: it defaults the other way round, and typing it out here keeps it from
++ * being read through {@link isUploadMethodEnabled}, where an unset value means
++ * "on".
++ */
++export type UploadMethodKey = 'provider' | 'context' | 'file_search' | 'execute_code';
++
 +export const isUploadMethodEnabled = (
-+  method: keyof TUploadMethods,
++  method: UploadMethodKey,
 +  specMethods?: TUploadMethods | null,
 +  endpointMethods?: TUploadMethods | null,
 +): boolean => specMethods?.[method] ?? endpointMethods?.[method] ?? true;
++
++/**
++ * Unlike the four method switches this defaults to **off**, so an image nobody
++ * configured keeps upstream's menu. Same spec-beats-endpoint resolution.
++ */
++export const isAutoRouteEnabled = (
++  specMethods?: TUploadMethods | null,
++  endpointMethods?: TUploadMethods | null,
++): boolean => specMethods?.autoRoute ?? endpointMethods?.autoRoute ?? false;
 +
 +/**
 + * Merges two `uploadMethods` objects per key, with `override` winning.
@@ -2989,7 +3313,7 @@ index 06f6b48..8082c0e 100644
  const skillFileConfigSchema = z.object({
    fileSizeLimit: z.number().min(0).optional(),
  });
-@@ -553,6 +657,7 @@ function mergeWithDefault(
+@@ -553,6 +712,7 @@ function mergeWithDefault(
      fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
      totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
      supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
@@ -2997,7 +3321,7 @@ index 06f6b48..8082c0e 100644
    };
  }
  
-@@ -782,6 +887,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
+@@ -782,6 +942,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
          dynamicEndpoint.supportedMimeTypes as unknown as string[],
        );
      }
@@ -3080,14 +3404,22 @@ index d977b1e..6863ab9 100644
  export type FileConfig = {
 diff --git a/packages/data-provider/src/upload-options.spec.ts b/packages/data-provider/src/upload-options.spec.ts
 new file mode 100644
-index 0000000..4dec075
+index 0000000..fd4512d
 --- /dev/null
 +++ b/packages/data-provider/src/upload-options.spec.ts
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,568 @@
 +import { EModelEndpoint, Providers } from './schemas';
 +import { EToolResources } from './types/assistants';
-+import { mergeFileConfig, getEndpointFileConfig } from './file-config';
-+import { getAvailableUploadOptions, UploadOptionType } from './upload-options';
++import { mergeFileConfig, getEndpointFileConfig, uploadMethodsSchema } from './file-config';
++import {
++  getAvailableUploadOptions,
++  groupRoutedFiles,
++  resolveUploadForFile,
++  shouldAutoRoute,
++  UploadOptionType,
++} from './upload-options';
++
++const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 +import type { UploadOptionsParams, UploadCandidateFile } from './upload-options';
 +
 +const png = (name = 'photo.png'): UploadCandidateFile => ({ name, type: 'image/png' });
@@ -3266,6 +3598,96 @@ index 0000000..4dec075
 +    });
 +  });
 +
++  describe('tool options can be switched off like the other two', () => {
++    const withTools = {
++      endpoint: EModelEndpoint.openAI,
++      fileSearchCapabilityEnabled: true,
++      fileSearchAllowedByAgent: true,
++      codeCapabilityEnabled: true,
++      codeAllowedByAgent: true,
++    };
++
++    it('offers both when nothing is configured', () => {
++      const has = types(withTools);
++      expect(has).toContain(UploadOptionType.file_search);
++      expect(has).toContain(UploadOptionType.execute_code);
++    });
++
++    it('file_search:false removes only file search', () => {
++      const has = types({ ...withTools, endpointUploadMethods: { file_search: false } });
++      expect(has).not.toContain(UploadOptionType.file_search);
++      expect(has).toContain(UploadOptionType.execute_code);
++    });
++
++    it('execute_code:false removes only the code environment', () => {
++      const has = types({ ...withTools, endpointUploadMethods: { execute_code: false } });
++      expect(has).toContain(UploadOptionType.file_search);
++      expect(has).not.toContain(UploadOptionType.execute_code);
++    });
++
++    /**
++     * The switch is the last conjunct, never the first. Both halves of the gate
++     * have to survive an explicit `true` — otherwise the config could hand a
++     * user an option the agent does not actually allow.
++     */
++    it.each([
++      ['capability off', { codeCapabilityEnabled: false, codeAllowedByAgent: true }],
++      ['agent forbids', { codeCapabilityEnabled: true, codeAllowedByAgent: false }],
++      ['both off', { codeCapabilityEnabled: false, codeAllowedByAgent: false }],
++    ])('execute_code:true cannot override the gate (%s)', (_name, gate) => {
++      expect(
++        types({
++          endpoint: EModelEndpoint.openAI,
++          ...gate,
++          endpointUploadMethods: { execute_code: true },
++        }),
++      ).not.toContain(UploadOptionType.execute_code);
++    });
++
++    it.each([
++      ['capability off', { fileSearchCapabilityEnabled: false, fileSearchAllowedByAgent: true }],
++      ['agent forbids', { fileSearchCapabilityEnabled: true, fileSearchAllowedByAgent: false }],
++      ['both off', { fileSearchCapabilityEnabled: false, fileSearchAllowedByAgent: false }],
++    ])('file_search:true cannot override the gate (%s)', (_name, gate) => {
++      expect(
++        types({
++          endpoint: EModelEndpoint.openAI,
++          ...gate,
++          endpointUploadMethods: { file_search: true },
++        }),
++      ).not.toContain(UploadOptionType.file_search);
++    });
++
++    it('the spec wins over the endpoint for file_search too', () => {
++      const has = types({
++        ...withTools,
++        endpointUploadMethods: { file_search: false },
++        specUploadMethods: { file_search: true },
++      });
++      expect(has).toContain(UploadOptionType.file_search);
++    });
++
++    it('the spec wins over the endpoint, per key', () => {
++      const has = types({
++        ...withTools,
++        endpointUploadMethods: { execute_code: false, file_search: false },
++        specUploadMethods: { execute_code: true },
++      });
++      expect(has).toContain(UploadOptionType.execute_code);
++      expect(has).not.toContain(UploadOptionType.file_search);
++    });
++
++    it('the Excel case: only the code environment survives', () => {
++      expect(
++        types({
++          ...withTools,
++          contextCapabilityEnabled: true,
++          endpointUploadMethods: { provider: false, context: false, file_search: false },
++        }),
++      ).toEqual([UploadOptionType.execute_code]);
++    });
++  });
++
 +  describe('file-aware filtering', () => {
 +    it('keeps the provider option for images and pdfs', () => {
 +      expect(types({ endpoint: EModelEndpoint.openAI, files: [png(), pdf()] })).toEqual([
@@ -3397,17 +3819,177 @@ index 0000000..4dec075
 +        }),
 +      ).toEqual([]);
 +    });
++
++    /**
++     * The switches above are handed to the function directly, which cannot catch
++     * a key the schema does not know: a non-strict Zod object drops it silently
++     * and every one of those tests still passes. These two go through
++     * `mergeFileConfig` and therefore through validation.
++     */
++    it('carries execute_code through merge and endpoint resolution', () => {
++      const merged = mergeFileConfig({
++        endpoints: { MyEndpoint: { uploadMethods: { execute_code: false } } },
++      });
++      const endpointConfig = getEndpointFileConfig({
++        fileConfig: merged,
++        endpoint: 'MyEndpoint',
++        endpointType: EModelEndpoint.custom,
++      });
++
++      expect(endpointConfig.uploadMethods).toEqual({ execute_code: false });
++      expect(
++        getAvailableUploadOptions({
++          endpoint: 'MyEndpoint',
++          endpointType: EModelEndpoint.custom,
++          codeCapabilityEnabled: true,
++          codeAllowedByAgent: true,
++          endpointUploadMethods: endpointConfig.uploadMethods,
++        }),
++      ).not.toContain(UploadOptionType.execute_code);
++    });
++
++    it('carries file_search through merge and endpoint resolution', () => {
++      const merged = mergeFileConfig({
++        endpoints: { MyEndpoint: { uploadMethods: { file_search: false } } },
++      });
++      const endpointConfig = getEndpointFileConfig({
++        fileConfig: merged,
++        endpoint: 'MyEndpoint',
++        endpointType: EModelEndpoint.custom,
++      });
++
++      expect(endpointConfig.uploadMethods).toEqual({ file_search: false });
++    });
++
++    it('rejects a camelCase typo instead of ignoring it', () => {
++      expect(() => uploadMethodsSchema.parse({ fileSearch: false })).toThrow();
++    });
++  });
++});
++
++describe('autoRoute and per-file routing', () => {
++  const base = {
++    endpoint: EModelEndpoint.openAI,
++    contextCapabilityEnabled: true,
++    codeCapabilityEnabled: true,
++    codeAllowedByAgent: true,
++  };
++
++  describe('shouldAutoRoute', () => {
++    it('is off when nothing configures it — that default is the contract', () => {
++      expect(shouldAutoRoute({})).toBe(false);
++      expect(shouldAutoRoute({ endpointUploadMethods: { provider: false } })).toBe(false);
++    });
++
++    it('follows the endpoint, then the spec', () => {
++      expect(shouldAutoRoute({ endpointUploadMethods: { autoRoute: true } })).toBe(true);
++      expect(
++        shouldAutoRoute({
++          endpointUploadMethods: { autoRoute: true },
++          specUploadMethods: { autoRoute: false },
++        }),
++      ).toBe(false);
++    });
++  });
++
++  describe('resolveUploadForFile', () => {
++    /**
++     * Precedence is the list order, so as long as text extraction is on offer it
++     * wins for a spreadsheet. That is the documented behaviour, not an accident:
++     * narrowing happens through the switches, not through a hidden ranking.
++     */
++    it('prefers the earlier method while several still apply', () => {
++      const option = resolveUploadForFile({ name: 'liste.xlsx', type: XLSX }, base);
++      expect(option?.type).toBe(UploadOptionType.context);
++    });
++
++    it('the Excel case: with the others off, a spreadsheet lands in the code environment', () => {
++      const option = resolveUploadForFile(
++        { name: 'liste.xlsx', type: XLSX },
++        { ...base, endpointUploadMethods: { provider: false, context: false } },
++      );
++      expect(option?.type).toBe(UploadOptionType.execute_code);
++    });
++
++    it('sends a pdf down the direct branch when it is enabled', () => {
++      const option = resolveUploadForFile({ name: 'plan.pdf', type: 'application/pdf' }, base);
++      expect(option?.type).toBe(UploadOptionType.provider);
++    });
++
++    it('returns null when no method can take the file', () => {
++      expect(
++        resolveUploadForFile(
++          { name: 'liste.xlsx', type: XLSX },
++          { ...base, codeCapabilityEnabled: false, contextCapabilityEnabled: false },
++        ),
++      ).toBeNull();
++    });
++
++    it('never picks a method the config switched off', () => {
++      const option = resolveUploadForFile(
++        { name: 'plan.pdf', type: 'application/pdf' },
++        { ...base, endpointUploadMethods: { provider: false } },
++      );
++      expect(option?.type).not.toBe(UploadOptionType.provider);
++    });
++  });
++
++  describe('groupRoutedFiles', () => {
++    it('keeps a mixed drop apart instead of forcing one method on all of it', () => {
++      const xlsx = { name: 'liste.xlsx', type: XLSX };
++      const pdf = { name: 'plan.pdf', type: 'application/pdf' };
++      /** Text extraction off, so the two files genuinely part ways. */
++      const params = { ...base, endpointUploadMethods: { context: false } };
++      const routed = [xlsx, pdf].map((file) => ({
++        file,
++        option: resolveUploadForFile(file, params),
++      }));
++
++      const { groups, rejected } = groupRoutedFiles(routed);
++      expect(rejected).toEqual([]);
++      expect(groups).toHaveLength(2);
++      expect(groups.find((g) => g.toolResource === EToolResources.execute_code)?.files).toEqual([
++        xlsx,
++      ]);
++      expect(groups.find((g) => g.toolResource === undefined)?.files).toEqual([pdf]);
++    });
++
++    it('batches files of the same method into one group', () => {
++      const a = { name: 'a.pdf', type: 'application/pdf' };
++      const b = { name: 'b.pdf', type: 'application/pdf' };
++      const { groups } = groupRoutedFiles(
++        [a, b].map((file) => ({ file, option: resolveUploadForFile(file, base) })),
++      );
++      expect(groups).toHaveLength(1);
++      expect(groups[0].files).toEqual([a, b]);
++    });
++
++    it('separates out what nothing can take', () => {
++      const good = { name: 'a.pdf', type: 'application/pdf' };
++      const bad = { name: 'b.pdf', type: 'application/pdf' };
++      const { groups, rejected } = groupRoutedFiles([
++        { file: good, option: { type: UploadOptionType.provider } },
++        { file: bad, option: null },
++      ]);
++      expect(rejected).toEqual([bad]);
++      expect(groups).toHaveLength(1);
++    });
 +  });
 +});
 diff --git a/packages/data-provider/src/upload-options.ts b/packages/data-provider/src/upload-options.ts
 new file mode 100644
-index 0000000..62e36d3
+index 0000000..901d959
 --- /dev/null
 +++ b/packages/data-provider/src/upload-options.ts
-@@ -0,0 +1,202 @@
+@@ -0,0 +1,290 @@
 +import { EToolResources } from './types/assistants';
 +import { EModelEndpoint, Providers, isDocumentSupportedProvider } from './schemas';
-+import { inferMimeType, isBedrockDocumentType, isUploadMethodEnabled } from './file-config';
++import {
++  inferMimeType,
++  isAutoRouteEnabled,
++  isBedrockDocumentType,
++  isUploadMethodEnabled,
++} from './file-config';
 +import type { TUploadMethods } from './file-config';
 +
 +/**
@@ -3427,7 +4009,7 @@ index 0000000..62e36d3
 +  context = 'context',
 +  /** "Upload for File Search" — RAG. */
 +  file_search = 'file_search',
-+  /** "Upload for Code Interpreter". */
++  /** "Upload to Code Environment". */
 +  execute_code = 'execute_code',
 +}
 +
@@ -3521,6 +4103,16 @@ index 0000000..62e36d3
 +    endpointUploadMethods,
 +  );
 +  const contextEnabled = isUploadMethodEnabled('context', specUploadMethods, endpointUploadMethods);
++  const fileSearchEnabled = isUploadMethodEnabled(
++    'file_search',
++    specUploadMethods,
++    endpointUploadMethods,
++  );
++  const codeEnabled = isUploadMethodEnabled(
++    'execute_code',
++    specUploadMethods,
++    endpointUploadMethods,
++  );
 +
 +  let currentProvider = provider || endpoint;
 +  // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
@@ -3594,11 +4186,15 @@ index 0000000..62e36d3
 +    options.push({ type: UploadOptionType.context, toolResource: EToolResources.context });
 +  }
 +
-+  if (fileSearchCapabilityEnabled === true && fileSearchAllowedByAgent === true) {
++  if (
++    fileSearchCapabilityEnabled === true &&
++    fileSearchAllowedByAgent === true &&
++    fileSearchEnabled
++  ) {
 +    options.push({ type: UploadOptionType.file_search, toolResource: EToolResources.file_search });
 +  }
 +
-+  if (codeCapabilityEnabled === true && codeAllowedByAgent === true) {
++  if (codeCapabilityEnabled === true && codeAllowedByAgent === true && codeEnabled) {
 +    options.push({
 +      type: UploadOptionType.execute_code,
 +      toolResource: EToolResources.execute_code,
@@ -3606,4 +4202,73 @@ index 0000000..62e36d3
 +  }
 +
 +  return options;
++}
++
++/**
++ * The method a single file should take when the choice is made for the user.
++ *
++ * Precedence is the order {@link getAvailableUploadOptions} returns, which is the
++ * order the menu would have listed. A deployment that wants a different winner
++ * turns the loser off rather than reordering: that keeps one source of truth for
++ * "what is on offer here" instead of two.
++ *
++ * `null` means no method can take this file. Callers must reject it and say so —
++ * uploading anyway would walk past both the capability checks and the config.
++ */
++export function resolveUploadForFile(
++  file: UploadCandidateFile,
++  params: Omit<UploadOptionsParams, 'files'>,
++): UploadOption | null {
++  const options = getAvailableUploadOptions({ ...params, files: [file] });
++  return options[0] ?? null;
++}
++
++/**
++ * Whether the choice should be made for the user at all. Off unless configured,
++ * see `uploadMethodsSchema.autoRoute`.
++ */
++export function shouldAutoRoute(
++  params: Pick<UploadOptionsParams, 'specUploadMethods' | 'endpointUploadMethods'>,
++): boolean {
++  return isAutoRouteEnabled(params.specUploadMethods, params.endpointUploadMethods);
++}
++
++/**
++ * Groups already-routed files by the method they resolved to, and separates out
++ * the ones nothing can take.
++ *
++ * Grouping rather than uploading file by file is deliberate: the existing upload
++ * path validates and batches a whole list against one tool resource, and that
++ * logic (size limits, counts, per-resource rules) is worth reusing untouched.
++ * One call per distinct method keeps all of it, while still letting a
++ * spreadsheet and a PDF in the same drop take different paths.
++ *
++ * Generic over the file type so this stays free of DOM types and testable
++ * without a browser.
++ */
++export function groupRoutedFiles<T>(routed: Array<{ file: T; option: UploadOption | null }>): {
++  groups: Array<{ toolResource?: EToolResources; files: T[] }>;
++  rejected: T[];
++} {
++  const groups: Array<{ toolResource?: EToolResources; files: T[] }> = [];
++  const rejected: T[] = [];
++  /** `undefined` is a real key here — it means "straight to the model". */
++  const index = new Map<EToolResources | '__direct__', number>();
++
++  for (const { file, option } of routed) {
++    if (option == null) {
++      rejected.push(file);
++      continue;
++    }
++    const key = option.toolResource ?? '__direct__';
++    const at = index.get(key);
++    if (at == null) {
++      index.set(key, groups.length);
++      groups.push({ toolResource: option.toolResource, files: [file] });
++    } else {
++      groups[at].files.push(file);
++    }
++  }
++
++  return { groups, rejected };
 +}
