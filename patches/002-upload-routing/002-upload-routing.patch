@@ -132,7 +132,7 @@ index 89bd49f..096e0e8 100644
      return (
        <AttachFile
 diff --git a/client/src/components/Chat/Input/Files/AttachFileMenu.tsx b/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
-index 952b337..a61fd2c 100644
+index 952b337..382e95b 100644
 --- a/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
 +++ b/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
 @@ -1,13 +1,6 @@
@@ -149,7 +149,7 @@ index 952b337..a61fd2c 100644
  import {
    FileUpload,
    TooltipAnchor,
-@@ -16,15 +9,17 @@ import {
+@@ -16,15 +9,16 @@ import {
    SharePointIcon,
  } from '@librechat/client';
  import {
@@ -163,14 +163,13 @@ index 952b337..a61fd2c 100644
 +  getAvailableUploadOptions,
 +  isAutoRouteEnabled,
 +  resolveUploadForFile,
-+  groupRoutedFiles,
  } from 'librechat-data-provider';
 -import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
 +import type { EndpointFileConfig, TConversation, UploadFileType } from 'librechat-data-provider';
  import type { ExtendedFile, FileSetter } from '~/common';
  import {
    useAgentToolPermissions,
-@@ -34,19 +29,15 @@ import {
+@@ -34,19 +28,15 @@ import {
    useLocalize,
  } from '~/hooks';
  import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
@@ -189,20 +188,19 @@ index 952b337..a61fd2c 100644
 -  | 'image_document'
 -  | 'image_document_extended'
 -  | 'image_document_video_audio';
-+import { useToastContext } from '@librechat/client';
++import useRoutedUpload from '~/hooks/Files/useRoutedUpload';
  
  interface AttachFileMenuProps {
    agentId?: string | null;
-@@ -76,7 +67,7 @@ const AttachFileMenu = ({
+@@ -76,7 +66,6 @@ const AttachFileMenu = ({
    conversation,
  }: AttachFileMenuProps) => {
    const localize = useLocalize();
 -  const isUploadDisabled = disabled ?? false;
-+  const { showToast } = useToastContext();
    const inputRef = useRef<HTMLInputElement>(null);
    const [isPopoverActive, setIsPopoverActive] = useState(false);
    const uploadFileTooltip = useShortcutHint('uploadFile', localize('com_sidepanel_attach_files'));
-@@ -85,7 +76,7 @@ const AttachFileMenu = ({
+@@ -85,7 +74,7 @@ const AttachFileMenu = ({
      ephemeralAgentByConvoId(conversationId),
    );
    const toolResourceRef = useRef<EToolResources | undefined>();
@@ -211,7 +209,7 @@ index 952b337..a61fd2c 100644
      files,
      setFiles,
      setFilesLoading,
-@@ -109,13 +100,19 @@ const AttachFileMenu = ({
+@@ -109,13 +98,19 @@ const AttachFileMenu = ({
     * */
    const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
  
@@ -232,7 +230,7 @@ index 952b337..a61fd2c 100644
        if (!inputRef.current) {
          return;
        }
-@@ -144,105 +141,150 @@ const AttachFileMenu = ({
+@@ -144,105 +139,136 @@ const AttachFileMenu = ({
      [endpointFileConfig?.supportedMimeTypes],
    );
  
@@ -321,18 +319,11 @@ index 952b337..a61fd2c 100644
 +   * item that does nothing. The trigger is disabled instead, which also covers
 +   * the window in which the configuration is still loading.
 +   */
-+  /**
-+   * Routes a picked selection and uploads it, one call per distinct method so
-+   * the existing per-resource validation and batching still applies. Files no
-+   * method can take are reported rather than pushed down a path that will fail.
-+   */
-+  const uploadRouted = useCallback(
-+    (picked: File[]) => {
-+      const routed = picked.map((file) => ({
-+        file,
-+        option: resolveUploadForFile({ name: file.name, type: file.type }, optionParams),
-+      }));
-+      const { groups, rejected } = groupRoutedFiles(routed);
++  const routedUpload = useRoutedUpload({
++    handleFiles,
++    setEphemeralAgent,
++    setFilesLoading,
++  });
  
 -      if (
 -        isDocumentSupportedProvider(endpointType) ||
@@ -365,9 +356,17 @@ index 952b337..a61fd2c 100644
 -          },
 -          icon: <ImageUpIcon className="icon-md" />,
 -        });
-+      if (rejected.length > 0) {
-+        showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
-       }
+-      }
++  const uploadRouted = useCallback(
++    (picked: File[]) =>
++      routedUpload(
++        picked.map((file) => ({
++          file,
++          option: resolveUploadForFile({ name: file.name, type: file.type }, optionParams),
++        })),
++      ),
++    [routedUpload, optionParams],
++  );
  
 -      if (capabilities.contextEnabled) {
 -        items.push({
@@ -378,19 +377,9 @@ index 952b337..a61fd2c 100644
 -          },
 -          icon: <FileType2Icon className="icon-md" />,
 -        });
-+      for (const group of groups) {
-+        if (
-+          group.toolResource === EToolResources.file_search ||
-+          group.toolResource === EToolResources.execute_code
-+        ) {
-+          const toolResource = group.toolResource;
-+          setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
-+        }
-+        handleFiles(group.files, group.toolResource);
-       }
-+    },
-+    [optionParams, handleFiles, setEphemeralAgent, showToast, localize],
-+  );
+-      }
++  const hasUploadOptions = uploadOptions.length > 0;
++  const isUploadDisabled = (disabled ?? false) || !hasUploadOptions;
  
 -      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
 -        items.push({
@@ -406,9 +395,6 @@ index 952b337..a61fd2c 100644
 -          icon: <FileSearch className="icon-md" />,
 -        });
 -      }
-+  const hasUploadOptions = uploadOptions.length > 0;
-+  const isUploadDisabled = (disabled ?? false) || !hasUploadOptions;
-+
 +  const dropdownItems = useMemo(() => {
 +    const setToolResource = (value: EToolResources | undefined) => {
 +      toolResourceRef.current = value;
@@ -464,7 +450,7 @@ index 952b337..a61fd2c 100644
      if (sharePointEnabled) {
        const sharePointItems = createMenuItems(() => {
          setIsSharePointDialogOpen(true);
-@@ -260,19 +302,44 @@ const AttachFileMenu = ({
+@@ -260,19 +286,44 @@ const AttachFileMenu = ({
      return localItems;
    }, [
      localize,
@@ -516,7 +502,7 @@ index 952b337..a61fd2c 100644
    const menuTrigger = (
      <TooltipAnchor
        render={
-@@ -310,21 +377,35 @@ const AttachFileMenu = ({
+@@ -310,21 +361,35 @@ const AttachFileMenu = ({
        <FileUpload
          ref={inputRef}
          handleFileChange={(e) => {
@@ -1629,6 +1615,130 @@ index 0000000..a2d878d
 +    });
 +  });
 +});
+diff --git a/client/src/hooks/Files/__tests__/useRoutedUpload.spec.tsx b/client/src/hooks/Files/__tests__/useRoutedUpload.spec.tsx
+new file mode 100644
+index 0000000..79eb77a
+--- /dev/null
++++ b/client/src/hooks/Files/__tests__/useRoutedUpload.spec.tsx
+@@ -0,0 +1,118 @@
++import { renderHook } from '@testing-library/react';
++import { EToolResources } from 'librechat-data-provider';
++import type { RoutedFile } from '../useUploadOptions';
++import useRoutedUpload from '../useRoutedUpload';
++
++const mockShowToast = jest.fn();
++jest.mock('@librechat/client', () => ({
++  useToastContext: () => ({ showToast: mockShowToast }),
++}));
++jest.mock('../../useLocalize', () => ({
++  __esModule: true,
++  default: () => (key: string) => key,
++}));
++
++const file = (name: string) => new File(['x'], name);
++
++const routedTo = (name: string, toolResource?: EToolResources): RoutedFile => ({
++  file: file(name),
++  option: { type: 'provider' as never, toolResource },
++});
++
++describe('useRoutedUpload', () => {
++  let handleFiles: jest.Mock;
++  let setEphemeralAgent: jest.Mock;
++  let setFilesLoading: jest.Mock;
++
++  const setup = () => {
++    handleFiles = jest.fn().mockResolvedValue(undefined);
++    setEphemeralAgent = jest.fn();
++    setFilesLoading = jest.fn();
++    return renderHook(() =>
++      useRoutedUpload({
++        handleFiles,
++        setEphemeralAgent: setEphemeralAgent as never,
++        setFilesLoading,
++      }),
++    ).result;
++  };
++
++  beforeEach(() => mockShowToast.mockClear());
++
++  /**
++   * The clipboard path shipped without this once. The upload reports success and
++   * the file is nowhere, because the agent never got the tool.
++   */
++  it.each([EToolResources.file_search, EToolResources.execute_code])(
++    'arms the ephemeral agent for %s before uploading',
++    async (resource) => {
++      const result = setup();
++      await result.current([routedTo('a.pdf', resource)]);
++
++      expect(setEphemeralAgent).toHaveBeenCalledTimes(1);
++      const updater = setEphemeralAgent.mock.calls[0][0] as (p: object) => object;
++      expect(updater({})).toEqual({ [resource]: true });
++      expect(handleFiles).toHaveBeenCalledWith([expect.any(File)], resource);
++    },
++  );
++
++  it('does not arm anything for a direct upload', async () => {
++    const result = setup();
++    await result.current([routedTo('a.pdf', undefined)]);
++    expect(setEphemeralAgent).not.toHaveBeenCalled();
++    expect(handleFiles).toHaveBeenCalledWith([expect.any(File)], undefined);
++  });
++
++  /**
++   * `validateFiles` counts against the files already in state and `addFile`
++   * lands asynchronously, so parallel groups would each see an empty list and
++   * walk past `fileLimit` one group at a time.
++   */
++  it('uploads the groups one after another, not all at once', async () => {
++    const result = setup();
++    const order: string[] = [];
++    handleFiles.mockImplementation(async (files: File[]) => {
++      order.push(`start:${files[0].name}`);
++      await Promise.resolve();
++      order.push(`end:${files[0].name}`);
++    });
++
++    await result.current([
++      routedTo('a.pdf', undefined),
++      routedTo('b.xlsx', EToolResources.execute_code),
++    ]);
++
++    expect(order).toEqual(['start:a.pdf', 'end:a.pdf', 'start:b.xlsx', 'end:b.xlsx']);
++  });
++
++  it('batches files of the same method into a single call', async () => {
++    const result = setup();
++    await result.current([routedTo('a.pdf', undefined), routedTo('b.pdf', undefined)]);
++    expect(handleFiles).toHaveBeenCalledTimes(1);
++    expect(handleFiles.mock.calls[0][0]).toHaveLength(2);
++  });
++
++  it('rejects without uploading when nothing can be routed', async () => {
++    const result = setup();
++    await result.current([{ file: file('a.zip'), option: null }]);
++
++    expect(handleFiles).not.toHaveBeenCalled();
++    expect(mockShowToast).toHaveBeenCalledWith(
++      expect.objectContaining({ message: 'com_ui_upload_no_options' }),
++    );
++    expect(setFilesLoading).toHaveBeenCalledWith(false);
++  });
++
++  it('names the skipped files when only some of them are unroutable', async () => {
++    const result = setup();
++    await result.current([
++      routedTo('good.pdf', undefined),
++      { file: file('bad.zip'), option: null },
++    ]);
++
++    expect(handleFiles).toHaveBeenCalledTimes(1);
++    expect(mockShowToast).toHaveBeenCalledWith(
++      expect.objectContaining({ message: 'com_ui_upload_no_options_partial' }),
++    );
++  });
++});
 diff --git a/client/src/hooks/Files/index.ts b/client/src/hooks/Files/index.ts
 index 7fa4df5..8da5d55 100644
 --- a/client/src/hooks/Files/index.ts
@@ -1643,7 +1753,7 @@ index 7fa4df5..8da5d55 100644
  export { default as useSharePointDownload } from './useSharePointDownload';
  export { default as useSharePointFileHandling } from './useSharePointFileHandling';
 diff --git a/client/src/hooks/Files/useDragHelpers.ts b/client/src/hooks/Files/useDragHelpers.ts
-index 847884c..7740b7d 100644
+index 847884c..49be4af 100644
 --- a/client/src/hooks/Files/useDragHelpers.ts
 +++ b/client/src/hooks/Files/useDragHelpers.ts
 @@ -1,28 +1,24 @@
@@ -1666,7 +1776,6 @@ index 847884c..7740b7d 100644
 -  AgentCapabilities,
 -  resolveEndpointType,
    isAssistantsEndpoint,
-+  groupRoutedFiles,
    getEndpointFileConfig,
 -  defaultAgentCapabilities,
  } from 'librechat-data-provider';
@@ -1677,11 +1786,12 @@ index 847884c..7740b7d 100644
 +import useUploadOptions from './useUploadOptions';
  import useFileHandling from './useFileHandling';
 -import { isEphemeralAgent } from '~/common';
++import useRoutedUpload from './useRoutedUpload';
 +import { useDragDropContext } from '~/Providers';
  import useLocalize from '../useLocalize';
  
  export default function useDragHelpers() {
-@@ -31,17 +27,62 @@ export default function useDragHelpers() {
+@@ -31,17 +27,42 @@ export default function useDragHelpers() {
    const localize = useLocalize();
    const [showModal, setShowModal] = useState(false);
    const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
@@ -1721,36 +1831,16 @@ index 847884c..7740b7d 100644
 +    files: pendingFiles,
 +  });
 +
-+  /**
-+   * Uploads a drop without asking, one call per distinct method. Used only when
-+   * `autoRoute` is configured; otherwise the dialog decides as before.
-+   */
++  const routedUpload = useRoutedUpload({ handleFiles, setEphemeralAgent });
++
 +  const uploadRouted = useCallback(
-+    (dropped: File[]) => {
-+      const { routed } = getRouteForFiles(dropped);
-+      const { groups, rejected } = groupRoutedFiles(routed);
-+
-+      if (rejected.length > 0) {
-+        showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
-+      }
-+
-+      for (const group of groups) {
-+        if (
-+          group.toolResource === EToolResources.file_search ||
-+          group.toolResource === EToolResources.execute_code
-+        ) {
-+          const toolResource = group.toolResource;
-+          setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
-+        }
-+        handleFiles(group.files, group.toolResource);
-+      }
-+    },
-+    [getRouteForFiles, handleFiles, setEphemeralAgent, showToast, localize],
++    (dropped: File[]) => routedUpload(getRouteForFiles(dropped).routed),
++    [routedUpload, getRouteForFiles],
 +  );
  
    const handleOptionSelect = useCallback(
      (toolResource: EToolResources | undefined) => {
-@@ -61,35 +102,24 @@ export default function useDragHelpers() {
+@@ -61,35 +82,24 @@ export default function useDragHelpers() {
  
    /** Use refs to avoid re-creating the drop handler */
    const handleFilesRef = useRef(handleFiles);
@@ -1792,7 +1882,7 @@ index 847884c..7740b7d 100644
          });
          if (endpointCfg?.disabled === true) {
            showToast({
-@@ -100,53 +130,86 @@ export default function useDragHelpers() {
+@@ -100,53 +110,86 @@ export default function useDragHelpers() {
          }
        }
  
@@ -1911,6 +2001,85 @@ index 847884c..7740b7d 100644
    const [{ canDrop, isOver }, drop] = useDrop(
      () => ({
        accept: [NativeTypes.FILE],
+diff --git a/client/src/hooks/Files/useRoutedUpload.ts b/client/src/hooks/Files/useRoutedUpload.ts
+new file mode 100644
+index 0000000..92334a5
+--- /dev/null
++++ b/client/src/hooks/Files/useRoutedUpload.ts
+@@ -0,0 +1,73 @@
++import { useCallback } from 'react';
++import { useToastContext } from '@librechat/client';
++import { EToolResources, groupRoutedFiles } from 'librechat-data-provider';
++import type { SetterOrUpdater } from 'recoil';
++import type * as t from 'librechat-data-provider';
++import type { RoutedFile } from './useUploadOptions';
++import useLocalize from '../useLocalize';
++
++interface UseRoutedUploadParams {
++  handleFiles: (files: File[], toolResource?: string) => Promise<void> | void;
++  setEphemeralAgent: SetterOrUpdater<t.TEphemeralAgent | null>;
++  setFilesLoading?: (loading: boolean) => void;
++}
++
++/**
++ * Uploads an already-routed set of files, one call per method.
++ *
++ * Shared by the three entry points that can route: the file picker, a drop and
++ * the clipboard. They had three copies of this, and the copies drifted — the
++ * clipboard one forgot to arm the ephemeral agent, which uploads a file to a
++ * tool the agent is not holding. It looks like it worked and the file is gone.
++ */
++export default function useRoutedUpload({
++  handleFiles,
++  setEphemeralAgent,
++  setFilesLoading,
++}: UseRoutedUploadParams) {
++  const { showToast } = useToastContext();
++  const localize = useLocalize();
++
++  return useCallback(
++    async (routed: RoutedFile[]) => {
++      const { groups, rejected } = groupRoutedFiles(routed);
++
++      if (rejected.length > 0) {
++        showToast({
++          message:
++            groups.length > 0
++              ? localize('com_ui_upload_no_options_partial', {
++                  0: rejected.map((file) => file.name).join(', '),
++                })
++              : localize('com_ui_upload_no_options'),
++          status: 'error',
++        });
++      }
++
++      if (groups.length === 0) {
++        setFilesLoading?.(false);
++        return;
++      }
++
++      setFilesLoading?.(true);
++
++      /**
++       * Sequential on purpose. `validateFiles` counts against the files already
++       * in state, and `addFile` lands asynchronously — firing the groups off
++       * together would let every one of them see an empty list and walk past
++       * `fileLimit` and `totalSizeLimit` a group at a time.
++       */
++      for (const group of groups) {
++        if (
++          group.toolResource === EToolResources.file_search ||
++          group.toolResource === EToolResources.execute_code
++        ) {
++          const toolResource = group.toolResource;
++          setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
++        }
++        await handleFiles(group.files, group.toolResource);
++      }
++    },
++    [handleFiles, setEphemeralAgent, setFilesLoading, showToast, localize],
++  );
++}
 diff --git a/client/src/hooks/Files/useUploadMethods.ts b/client/src/hooks/Files/useUploadMethods.ts
 new file mode 100644
 index 0000000..e0e8bb5
@@ -2563,22 +2732,23 @@ index 0000000..54bb109
 +  });
 +});
 diff --git a/client/src/hooks/Input/useTextarea.ts b/client/src/hooks/Input/useTextarea.ts
-index 0e54270..685c743 100644
+index 0e54270..f066e67 100644
 --- a/client/src/hooks/Input/useTextarea.ts
 +++ b/client/src/hooks/Input/useTextarea.ts
 @@ -1,7 +1,9 @@
 -import { useEffect, useRef, useCallback, useMemo } from 'react';
 +import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
  import debounce from 'lodash/debounce';
-+import { useToastContext } from '@librechat/client';
- import { useRecoilValue, useRecoilState } from 'recoil';
+-import { useRecoilValue, useRecoilState } from 'recoil';
 -import type { TEndpointOption } from 'librechat-data-provider';
-+import { groupRoutedFiles, isAssistantsEndpoint } from 'librechat-data-provider';
++import { useToastContext } from '@librechat/client';
++import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
++import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 +import type { TEndpointOption, UploadOption } from 'librechat-data-provider';
  import type { KeyboardEvent } from 'react';
  import {
    parseBinding,
-@@ -19,8 +21,10 @@ import {
+@@ -19,16 +21,29 @@ import {
  import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
  import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
  import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
@@ -2589,7 +2759,10 @@ index 0e54270..685c743 100644
  import { useInteractionHealthCheck } from '~/data-provider';
  import { useChatContext } from '~/Providers/ChatContext';
  import { globalAudioId } from '~/common';
-@@ -29,6 +33,15 @@ import store from '~/store';
+ import { useLocalize } from '~/hooks';
++import { ephemeralAgentByConvoId } from '~/store';
++import useRoutedUpload from '~/hooks/Files/useRoutedUpload';
+ import store from '~/store';
  
  type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
  
@@ -2605,7 +2778,7 @@ index 0e54270..685c743 100644
  export default function useTextarea({
    textAreaRef,
    submitButtonRef,
-@@ -45,6 +58,7 @@ export default function useTextarea({
+@@ -45,6 +60,7 @@ export default function useTextarea({
    const localize = useLocalize();
    const getSender = useGetSender();
    const isComposing = useRef(false);
@@ -2613,7 +2786,7 @@ index 0e54270..685c743 100644
    const agentsMap = useAgentsMapContext();
    const { handleFiles } = useFileHandling();
    const assistantMap = useAssistantsMapContext();
-@@ -264,6 +278,118 @@ export default function useTextarea({
+@@ -264,6 +280,103 @@ export default function useTextarea({
      isComposing.current = false;
    };
  
@@ -2654,29 +2827,14 @@ index 0e54270..685c743 100644
 +    });
 +  }, [setFilesLoading, showToast, localize]);
 +
-+  /**
-+   * Routes a paste per file instead of assuming the direct branch. Only used
-+   * when `autoRoute` is configured; without it the clipboard behaves as before.
-+   */
++  const setEphemeralAgent = useSetRecoilState(
++    ephemeralAgentByConvoId(dragDropContext.conversationId ?? Constants.NEW_CONVO),
++  );
++  const routedUpload = useRoutedUpload({ handleFiles, setEphemeralAgent, setFilesLoading });
++
 +  const uploadRoutedPaste = useCallback(
-+    (pasted: File[]) => {
-+      const { routed } = getRouteForFiles(pasted);
-+      const { groups, rejected } = groupRoutedFiles(routed);
-+
-+      if (groups.length === 0) {
-+        rejectPastedFiles();
-+        return;
-+      }
-+      if (rejected.length > 0) {
-+        showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
-+      }
-+
-+      setFilesLoading(true);
-+      for (const group of groups) {
-+        handleFiles(group.files, group.toolResource);
-+      }
-+    },
-+    [getRouteForFiles, handleFiles, rejectPastedFiles, setFilesLoading, showToast, localize],
++    (pasted: File[]) => routedUpload(getRouteForFiles(pasted).routed),
++    [routedUpload, getRouteForFiles],
 +  );
 +
 +  /**
@@ -2732,7 +2890,7 @@ index 0e54270..685c743 100644
    const handlePaste = useCallback(
      (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
        const textArea = textAreaRef.current;
-@@ -277,7 +403,6 @@ export default function useTextarea({
+@@ -277,7 +390,6 @@ export default function useTextarea({
        }
  
        if (clipboardData.files.length > 0) {
@@ -2740,7 +2898,7 @@ index 0e54270..685c743 100644
          const timestampedFiles: File[] = [];
          for (const file of clipboardData.files) {
            const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
-@@ -285,10 +410,67 @@ export default function useTextarea({
+@@ -285,10 +397,67 @@ export default function useTextarea({
            });
            timestampedFiles.push(newFile);
          }
@@ -2810,7 +2968,7 @@ index 0e54270..685c743 100644
  
    return {
 diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
-index 81df389..dc7eb04 100644
+index 81df389..1fb1b73 100644
 --- a/client/src/locales/en/translation.json
 +++ b/client/src/locales/en/translation.json
 @@ -1856,6 +1856,7 @@
@@ -2821,11 +2979,19 @@ index 81df389..dc7eb04 100644
    "com_ui_upload_ocr_text": "Upload as Text",
    "com_ui_upload_provider": "Upload to Provider",
    "com_ui_upload_success": "Successfully uploaded file",
+@@ -1925,5 +1926,6 @@
+   "com_ui_zoom_in": "Zoom in",
+   "com_ui_zoom_level": "Zoom level",
+   "com_ui_zoom_out": "Zoom out",
+-  "com_user_message": "You"
++  "com_user_message": "You",
++  "com_ui_upload_no_options_partial": "Some files have no upload option here and were skipped: {{0}}"
+ }
 diff --git a/librechat.example.yaml b/librechat.example.yaml
-index bfdcc60..4e2ff43 100644
+index bfdcc60..f5b36d1 100644
 --- a/librechat.example.yaml
 +++ b/librechat.example.yaml
-@@ -710,6 +710,15 @@ endpoints:
+@@ -710,6 +710,18 @@ endpoints:
  #       #   enabled: true
  #       #   allowSelf: true
  #       #   agent_ids: []
@@ -2838,10 +3004,13 @@ index bfdcc60..4e2ff43 100644
 +#       # uploadMethods:
 +#       #   provider: false
 +#       #   context: false
++#       #   file_search: false
++#       #   execute_code: false
++#       #   autoRoute: true
  #
  #     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
  #     - name: "llama3-70b-8192"
-@@ -777,6 +786,41 @@ endpoints:
+@@ -777,6 +789,56 @@ endpoints:
  #     YourCustomEndpointName:
  #       fileLimit: 2
  #       fileSizeLimit: 5
@@ -2880,6 +3049,21 @@ index bfdcc60..4e2ff43 100644
 +#         # only enabled method is how an agent that works on spreadsheets stops
 +#         # offering paths that fail for .xlsx.
 +#         execute_code: true
++#         # Drop the choice entirely and route by file type. Default false.
++#         #
++#         # On, the attachment button opens the file picker directly with no
++#         # menu, a drop or a paste uploads straight away with no dialog, and
++#         # every file is routed on its own by MIME type and extension. Where
++#         # several methods still apply, the one the menu would have listed
++#         # first wins — switch the loser off rather than expecting a ranking.
++#         #
++#         # Two consequences worth knowing before switching it on:
++#         #   - the SharePoint picker lives in that menu and is unreachable
++#         #     while this is on;
++#         #   - only the direct branch checks the file type today, so a file the
++#         #     text extractor cannot read is still routed to it and fails at
++#         #     validation rather than being rejected up front.
++#         autoRoute: true
  #   serverFileSizeLimit: 100  # Global server file size limit in MB
  #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
  #   imageGeneration: # Image Gen settings, either percentage or px
@@ -2930,10 +3114,10 @@ index 90287a4..10ae0d4 100644
      const modelSpec: TModelSpec = {
        name: 'guarded-openai',
 diff --git a/packages/data-provider/src/file-config.spec.ts b/packages/data-provider/src/file-config.spec.ts
-index b564f5a..9cf492d 100644
+index b564f5a..94c8556 100644
 --- a/packages/data-provider/src/file-config.spec.ts
 +++ b/packages/data-provider/src/file-config.spec.ts
-@@ -5,6 +5,7 @@ import {
+@@ -5,12 +5,15 @@ import {
    convertStringsToRegex,
    documentParserMimeTypes,
    getEndpointFileConfig,
@@ -2941,7 +3125,15 @@ index b564f5a..9cf492d 100644
    applicationMimeTypes,
    defaultOCRMimeTypes,
    supportedMimeTypes,
-@@ -1342,3 +1343,193 @@ describe('isPermissiveMimeConfig', () => {
+   mergeFileConfig,
+   inferMimeType,
+   textMimeTypes,
++  isAutoRouteEnabled,
++  uploadMethodsSchema,
+ } from './file-config';
+ import { EModelEndpoint } from './schemas';
+ 
+@@ -1342,3 +1345,220 @@ describe('isPermissiveMimeConfig', () => {
      expect(isPermissiveMimeConfig(converted)).toBe(true);
    });
  });
@@ -3133,6 +3325,33 @@ index b564f5a..9cf492d 100644
 +    });
 +
 +    expect(endpointConfig.uploadMethods).toBeUndefined();
++  });
++});
++
++describe('autoRoute through the config pipeline', () => {
++  it('survives merge and endpoint resolution', () => {
++    const merged = mergeFileConfig({
++      endpoints: { MyEndpoint: { uploadMethods: { autoRoute: true, context: false } } },
++    });
++    const endpointConfig = getEndpointFileConfig({
++      fileConfig: merged,
++      endpoint: 'MyEndpoint',
++      endpointType: EModelEndpoint.custom,
++    });
++    expect(endpointConfig.uploadMethods).toEqual({ autoRoute: true, context: false });
++  });
++
++  it('is off unless something sets it', () => {
++    expect(isAutoRouteEnabled()).toBe(false);
++    expect(isAutoRouteEnabled(null, { provider: false })).toBe(false);
++  });
++
++  it('lets a spec take it back after an endpoint switched it on', () => {
++    expect(isAutoRouteEnabled({ autoRoute: false }, { autoRoute: true })).toBe(false);
++  });
++
++  it('rejects a misspelled key instead of dropping it', () => {
++    expect(() => uploadMethodsSchema.parse({ autoroute: true })).toThrow();
 +  });
 +});
 diff --git a/packages/data-provider/src/file-config.ts b/packages/data-provider/src/file-config.ts
