@@ -8,11 +8,16 @@
 ## What upstream does
 
 A rendered markdown table is a bare `<table>`. Copying it means selecting it by
-hand, and pasting that into Excel or Word produces one run of scrambled text.
-The complaint, verbatim from a user's feedback document (May 2026):
+hand. The clipboard does not receive a structured representation of the table,
+so pasting into applications such as Excel or Word can flatten rows and columns
+into an unusable block of text.
 
-> „Bei LieberChat muss man dagegen die ganze Tabelle manuell markieren, und wenn
-> man sie einfügt, wird alles durcheinander."
+## Why it matters
+
+Tables in model responses are often intermediate results that users need to
+continue working with in a spreadsheet or document. Preserving their row and
+column structure avoids manual reconstruction and makes the rendered output
+portable beyond LibreChat.
 
 ## What this patch changes
 

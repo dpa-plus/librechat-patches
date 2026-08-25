@@ -87,9 +87,8 @@ The Excel case, end to end:
 ```
 
 A dropped `.xlsx` now lands in the code environment without anyone choosing
-anything — which is what the instruction "please click the paperclip and choose
-Upload to Code Environment, the other options fail for .xlsx" in a model
-description was standing in for.
+anything. Deployments no longer need to compensate for ambiguous upload choices
+with model instructions or user training.
 
 ### Scope
 

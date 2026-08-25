@@ -6,23 +6,21 @@
 
 ## Why this exists
 
-Running [LibreChat](https://github.com/danny-avila/LibreChat) for an enterprise
-customer keeps hitting the same wall: a value that has to be configurable for
-this deployment is hardcoded upstream, applied to every endpoint, with no
-environment variable and no config key to reach it.
+Some [LibreChat](https://github.com/danny-avila/LibreChat) deployments need to
+adjust behaviour that is currently hardcoded upstream and applied to every
+endpoint, with no environment variable or configuration key to control it.
 
 These are rarely controversial changes. Usually somebody has already asked for
 them, and often somebody has already written the patch. What is missing is a
 merge. The requests behind patch 001 have been open since **April 2025** and
 **December 2025**; the related pull request is still a draft.
 
-That is a perfectly reasonable pace for a project maintained by two people. It
-is not a pace you can put in front of a customer who needs the setting next
-week.
+That can be a perfectly reasonable pace for a small upstream maintenance team,
+but it does not always match downstream release schedules.
 
-So this repository is the shortcut. We apply the change ourselves, in a form
-narrow enough that the shortcut stays cheap — and we offer the same change
-upstream, so that one day we can delete it again.
+This repository provides a temporary compatibility layer. Each change is kept
+narrow enough to maintain safely and, where appropriate, is also proposed
+upstream so that the local patch can eventually be removed.
 
 ## What it is
 
@@ -131,6 +129,18 @@ and upstream does not expose — a patch here is a reasonable place to put it,
 provided it follows the rule above. And please open or upvote the upstream issue
 too. **The goal is to empty this repository, not to grow it.** Every patch that
 lands upstream gets deleted here.
+
+### Public documentation
+
+Describe patches in terms of reproducible technical behaviour and general user
+impact. Link to public upstream issues, discussions or pull requests when they
+provide useful context.
+
+Do not publish quotations or source attributions from private emails, support
+tickets, customer interviews, internal documents or other non-public sources.
+If private feedback helped reveal a problem, document the underlying product
+limitation without publishing the source or deployment-specific details.
+Examples should use generic names unless a name is part of a public API.
 
 ## Licence
 
