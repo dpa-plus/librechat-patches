@@ -1,5 +1,10 @@
 # 004 — Video-/Audio-Uploads für Werkzeug-Sidecars
 
+**Applied:** yes — built into the image, see `Dockerfile`
+**Type:** B (off-by-default switch, see the rule in the repository README)
+**Base:** v0.8.7
+**Upstream status:** not offered yet
+
 LibreChat bietet Rohvideo und -audio standardmäßig nur Endpunkten an, die diese
 Medien selbst verarbeiten. Ein Custom-Endpunkt wie Cortecs bekommt deshalb bei
 MP4 keinen nutzbaren Provider-Upload, obwohl ein MCP-Sidecar die lokal
@@ -23,12 +28,20 @@ eingeführte Dateien. Seine Tests decken Default, Opt-in, Override,
 Beispiel:
 
 ```yaml
-endpoints:
-  custom:
-    - name: Cortecs
-      fileConfig:
-        uploadMethods:
-          providerVideoAudio: true
-          autoRoute: true
-```
+modelSpecs:
+  list:
+    - name: video-analyse
+      uploadMethods:
+        provider: true
+        providerVideoAudio: true
+        autoRoute: true
 
+fileConfig:
+  endpoints:
+    Cortecs:
+      supportedMimeTypes: ['video/.*']
+      uploadMethods:
+        provider: true
+        providerVideoAudio: true
+        autoRoute: true
+```
