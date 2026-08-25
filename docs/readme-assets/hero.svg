@@ -13,19 +13,15 @@
     <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#1C191F"/><stop offset="100%" stop-color="#141218"/>
     </linearGradient>
-    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#FF6100" stop-opacity="0.05"/>
-      <stop offset="45%" stop-color="#FF6100" stop-opacity="0.85"/>
-      <stop offset="100%" stop-color="#FF8C43" stop-opacity="1"/>
+    <linearGradient id="layer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6E2C0E" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#FF6100" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#FF9A57" stop-opacity="0.35"/>
     </linearGradient>
-    <linearGradient id="flowSoft" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#DEAA99" stop-opacity="0.05"/>
-      <stop offset="45%" stop-color="#DEAA99" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#ECC7B9" stop-opacity="0.85"/>
-    </linearGradient>
-    <linearGradient id="hair" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#2A2630" stop-opacity="0"/><stop offset="50%" stop-color="#3A3440"/>
-      <stop offset="100%" stop-color="#2A2630" stop-opacity="0"/>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF6100" stop-opacity="0"/>
+      <stop offset="45%" stop-color="#FF6100" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FF8C43" stop-opacity="0"/>
     </linearGradient>
     <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
       <circle cx="1.3" cy="1.3" r="1.3" fill="#C9B8AE" fill-opacity="0.055"/>
@@ -46,42 +42,41 @@
       <!-- DPA+ wordmark · cdn.prozesshub.eu/assets/brand/v1/logo -->
       <g transform="translate(52.05,85.40) scale(0.15000)" fill="#FF6100"><g><g transform="translate(121.634437, 184.728004)"><g><path d="M 90.09375 -140.15625 C 105.175781 -140.15625 116.625 -136.25 124.4375 -128.4375 C 132.25 -120.632812 136.15625 -109.191406 136.15625 -94.109375 L 136.15625 -46.046875 C 136.15625 -30.960938 132.25 -19.515625 124.4375 -11.703125 C 116.625 -3.898438 105.175781 0 90.09375 0 L 12.015625 0 L 12.015625 -140.15625 Z M 100.109375 -94.109375 C 100.109375 -106.117188 94.101562 -112.125 82.09375 -112.125 L 48.046875 -112.125 L 48.046875 -28.03125 L 82.09375 -28.03125 C 94.101562 -28.03125 100.109375 -34.035156 100.109375 -46.046875 Z M 100.109375 -94.109375 " /></g></g></g><g><g transform="translate(305.836581, 184.728004)"><g><path d="M 12.015625 -140.15625 L 96.109375 -140.15625 C 110.117188 -140.15625 120.296875 -136.984375 126.640625 -130.640625 C 132.984375 -124.296875 136.15625 -114.117188 136.15625 -100.109375 L 136.15625 -80.09375 C 136.15625 -66.070312 132.984375 -55.890625 126.640625 -49.546875 C 120.296875 -43.210938 110.117188 -40.046875 96.109375 -40.046875 L 48.046875 -40.046875 L 48.046875 0 L 12.015625 0 Z M 100.109375 -100.109375 C 100.109375 -108.117188 96.101562 -112.125 88.09375 -112.125 L 48.046875 -112.125 L 48.046875 -68.078125 L 88.09375 -68.078125 C 96.101562 -68.078125 100.109375 -72.082031 100.109375 -80.09375 Z M 100.109375 -100.109375 " /></g></g></g><g><g transform="translate(488.036541, 184.728004)"><g><path d="M 37.046875 0 L -2 0 L 51.0625 -140.15625 L 91.09375 -140.15625 L 144.15625 0 L 105.109375 0 L 96.109375 -25.03125 L 46.046875 -25.03125 Z M 55.0625 -51.0625 L 87.09375 -51.0625 L 71.078125 -98.109375 Z M 55.0625 -51.0625 " /></g></g></g><g><g transform="translate(670.236524, 184.728004)"><g><path d="M 68.078125 -84.09375 L 102.109375 -84.09375 L 102.109375 -56.0625 L 68.078125 -56.0625 L 68.078125 -22.03125 L 40.046875 -22.03125 L 40.046875 -56.0625 L 6 -56.0625 L 6 -84.09375 L 40.046875 -84.09375 L 40.046875 -118.125 L 68.078125 -118.125 Z M 68.078125 -84.09375 " /></g></g></g></g>
       <text x="72" y="178" font-size="50" font-weight="700" letter-spacing="-1.4"><tspan fill="#F5F1EE">librechat-</tspan><tspan fill="#FF6100">patches</tspan></text>
-      <text x="72" y="219" fill="#A79C97" font-size="18.5" letter-spacing="-0.15">Enterprise needs it configurable. Upstream hardcodes it,</text>
-      <text x="72" y="246" fill="#A79C97" font-size="18.5" letter-spacing="-0.15">and the request to open it up is 16 months old.</text>
+      <text x="72" y="225" fill="#B8ACA6" font-size="20" letter-spacing="-0.2">A thin, opt-in overlay. Upstream behaviour by default.</text>
     </g>
 
-    <g transform="translate(742,60)">
-      <ellipse cx="192" cy="214" rx="176" ry="16" fill="#000000" fill-opacity="0.6" filter="url(#glowBig)"/>
+    <g transform="translate(738,42)">
+      <ellipse cx="200" cy="260" rx="190" ry="18" fill="#000000" fill-opacity="0.62" filter="url(#glowBig)"/>
+      <path d="M200 62 V196" stroke="url(#beam)" stroke-width="2"/>
 
-      <!-- BASE: unchanged upstream image -->
-      <g transform="translate(28,36)">
-        <rect x="0" y="0" width="328" height="56" rx="12" fill="#16141A" stroke="#2A2630"/>
-        <text x="18" y="23" fill="#6E635F" font-size="10.5" font-weight="600" letter-spacing="1.8">BASE</text>
-        <text x="18" y="43" fill="#8F847F" font-size="14" font-weight="500">ghcr.io/danny-avila/librechat-api</text>
-      </g>
-      <rect x="52" y="18" width="280" height="1" fill="url(#hair)"/>
-      <rect x="76" y="6" width="232" height="1" fill="url(#hair)" opacity="0.55"/>
-
-      <!-- The patch layer: deliberately thin and visible. -->
-      <g transform="translate(28,96)">
-        <rect x="-4" y="-4" width="336" height="46" rx="13" fill="#FF6100" fill-opacity="0.13" filter="url(#glow)"/>
-        <rect x="0" y="0" width="328" height="38" rx="10" fill="#2E1A0E" stroke="#FF6100"/>
-        <text x="18" y="24" fill="#FFB07A" font-size="13.5" font-weight="600">patches/001-image-resize</text>
-        <text x="310" y="24" text-anchor="end" fill="#C4703A" font-size="11.5" font-weight="600" letter-spacing="0.6">1 FILE</text>
+      <!-- The unchanged upstream base. -->
+      <g transform="translate(35,0)">
+        <rect width="330" height="70" rx="16" fill="url(#panel)" stroke="#39333D"/>
+        <rect x="0" y="15" width="3" height="40" rx="1.5" fill="#5A515C"/>
+        <text x="24" y="27" fill="#817772" font-size="11.5" font-weight="700" letter-spacing="2.1">UPSTREAM</text>
+        <text x="24" y="53" fill="#D8D0CC" font-size="18" font-weight="600">Official LibreChat image</text>
+        <circle cx="302" cy="35" r="4" fill="#625963"/>
       </g>
 
-      <!-- Flow from the patch layer into the published result. -->
-      <path d="M34 146 C 132 146, 152 181, 252 181 C 312 181, 330 181, 350 181" stroke="url(#flow)" stroke-width="2" fill="none"/>
-      <circle cx="350" cy="181" r="4" fill="#FF8C43"/>
-      <circle cx="350" cy="181" r="9" fill="#FF6100" fill-opacity="0.28" filter="url(#glow)"/>
+      <!-- Multiple thin plates make the overlay visible without naming individual patches. -->
+      <rect x="56" y="84" width="288" height="7" rx="3.5" fill="url(#layer)" opacity="0.28"/>
+      <rect x="46" y="93" width="308" height="7" rx="3.5" fill="url(#layer)" opacity="0.48"/>
+      <rect x="36" y="102" width="328" height="7" rx="3.5" fill="url(#layer)" opacity="0.72"/>
+      <rect x="22" y="108" width="356" height="54" rx="13" fill="#FF6100" fill-opacity="0.13" filter="url(#glow)"/>
+      <rect x="26" y="110" width="348" height="50" rx="12" fill="#2E1A0E" stroke="#FF6100"/>
+      <rect x="26" y="121" width="4" height="28" rx="2" fill="#FF7A28"/>
+      <text x="50" y="142" fill="#FFC09A" font-size="17.5" font-weight="650" letter-spacing="0.1">Opt-in patch layer</text>
+      <rect x="46" y="169" width="308" height="7" rx="3.5" fill="url(#layer)" opacity="0.48"/>
+      <rect x="56" y="178" width="288" height="7" rx="3.5" fill="url(#layer)" opacity="0.28"/>
 
-      <!-- RESULT: the image published by this repository -->
-      <g transform="translate(0,190)">
-        <rect x="0" y="0" width="384" height="60" rx="14" fill="url(#panel)" stroke="#3A3440"/>
-        <text x="22" y="25" fill="#6E635F" font-size="10.5" font-weight="600" letter-spacing="1.8">RESULT</text>
-        <text x="22" y="45" fill="#F5F1EE" font-size="14.5" font-weight="600">ghcr.io/dpa-plus/librechat-api</text>
-        <circle cx="358" cy="30" r="4" fill="#FF6100"/>
-        <circle cx="358" cy="30" r="9" fill="#FF6100" fill-opacity="0.3" filter="url(#glow)"/>
+      <!-- The published image keeps upstream defaults until a patch is enabled. -->
+      <g transform="translate(8,194)">
+        <rect width="384" height="70" rx="16" fill="url(#panel)" stroke="#4A3D40"/>
+        <rect x="0" y="14" width="4" height="42" rx="2" fill="#FF6100"/>
+        <text x="25" y="27" fill="#9A8177" font-size="11.5" font-weight="700" letter-spacing="2.1">PUBLISHED</text>
+        <text x="25" y="54" fill="#F5F1EE" font-size="18.5" font-weight="650">DPA+ LibreChat image</text>
+        <circle cx="355" cy="35" r="5" fill="#FF6100"/>
+        <circle cx="355" cy="35" r="12" fill="#FF6100" fill-opacity="0.22" filter="url(#glow)"/>
       </g>
     </g>
     <rect x="0.5" y="0.5" width="1199" height="339" rx="28" fill="none" stroke="#241F29"/>
