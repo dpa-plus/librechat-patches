@@ -127,8 +127,12 @@ async function buildEndpointOption(req, res, next) {
    * `reasoning_effort`. When the deployment explicitly offers the composer
    * toggle, the validated user signal is re-attached — but never over a value
    * the spec preset itself defines, so the admin's preset stays authoritative.
+   * Gate on the ENDPOINT, not the route: custom endpoints run through the
+   * agents route (isAgents is true for them), and their ephemeral agent takes
+   * its model_parameters from this parsedBody. Only configured agents
+   * (endpoint === 'agents') manage their own model settings and stay excluded.
    */
-  if (!isAgents && appConfig?.interfaceConfig?.reasoningToggle === true) {
+  if (!isAgentsEndpoint(endpoint) && appConfig?.interfaceConfig?.reasoningToggle === true) {
     const userEffort = req.body.reasoning_effort;
     const validEfforts = new Set(['none', 'minimal', 'low', 'medium', 'high']);
     if (

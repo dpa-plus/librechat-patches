@@ -1,8 +1,8 @@
 diff --git a/api/server/middleware/buildEndpointOption.js b/api/server/middleware/buildEndpointOption.js
-index 84fb85d..b132199 100644
+index 84fb85d..28913a9 100644
 --- a/api/server/middleware/buildEndpointOption.js
 +++ b/api/server/middleware/buildEndpointOption.js
-@@ -121,6 +121,25 @@ async function buildEndpointOption(req, res, next) {
+@@ -121,6 +121,29 @@ async function buildEndpointOption(req, res, next) {
      }
    }
  
@@ -12,8 +12,12 @@ index 84fb85d..b132199 100644
 +   * `reasoning_effort`. When the deployment explicitly offers the composer
 +   * toggle, the validated user signal is re-attached — but never over a value
 +   * the spec preset itself defines, so the admin's preset stays authoritative.
++   * Gate on the ENDPOINT, not the route: custom endpoints run through the
++   * agents route (isAgents is true for them), and their ephemeral agent takes
++   * its model_parameters from this parsedBody. Only configured agents
++   * (endpoint === 'agents') manage their own model settings and stay excluded.
 +   */
-+  if (!isAgents && appConfig?.interfaceConfig?.reasoningToggle === true) {
++  if (!isAgentsEndpoint(endpoint) && appConfig?.interfaceConfig?.reasoningToggle === true) {
 +    const userEffort = req.body.reasoning_effort;
 +    const validEfforts = new Set(['none', 'minimal', 'low', 'medium', 'high']);
 +    if (
