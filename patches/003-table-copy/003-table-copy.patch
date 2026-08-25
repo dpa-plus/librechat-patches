@@ -1,0 +1,196 @@
+diff --git a/client/src/components/Chat/Messages/Content/MarkdownComponents.tsx b/client/src/components/Chat/Messages/Content/MarkdownComponents.tsx
+index 5147dd2..a344bd9 100644
+--- a/client/src/components/Chat/Messages/Content/MarkdownComponents.tsx
++++ b/client/src/components/Chat/Messages/Content/MarkdownComponents.tsx
+@@ -1,13 +1,15 @@
+-import React, { memo, useMemo, useRef, useEffect } from 'react';
++import React, { memo, useMemo, useRef, useEffect, useState, useCallback } from 'react';
+ import { useRecoilValue } from 'recoil';
+-import { useToastContext } from '@librechat/client';
++import { useToastContext, Clipboard, CheckMark } from '@librechat/client';
+ import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
+ import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
+ import CodeBlock from '~/components/Messages/Content/CodeBlock';
+ import useHasAccess from '~/hooks/Roles/useHasAccess';
+ import { useFileDownload } from '~/data-provider';
++import { useGetStartupConfig } from '~/data-provider';
+ import { useCodeBlockContext } from '~/Providers';
+ import { handleDoubleClick, triggerDownload } from '~/utils';
++import { copyTableToClipboard } from '~/utils/tableClipboard';
+ import { useLocalize } from '~/hooks';
+ import store from '~/store';
+ 
+@@ -190,9 +192,47 @@ type TTableProps = {
+ };
+ 
+ export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
++  const localize = useLocalize();
++  const tableRef = useRef<HTMLTableElement>(null);
++  const [copied, setCopied] = useState(false);
++  const { data: startupConfig } = useGetStartupConfig();
++  /**
++   * Off unless the deployment turns it on — with `interface.tableCopy` unset
++   * this renders character for character what upstream renders. Same contract
++   * as every other patch in this overlay.
++   */
++  const enabled = startupConfig?.interface?.tableCopy === true;
++
++  const handleCopy = useCallback(() => {
++    const el = tableRef.current;
++    if (el == null) {
++      return;
++    }
++    copyTableToClipboard(el).then(() => {
++      setCopied(true);
++      setTimeout(() => setCopied(false), 1500);
++    });
++  }, []);
++
++  if (!enabled) {
++    return (
++      <div className="markdown-table-wrapper w-full max-w-full">
++        <table>{children}</table>
++      </div>
++    );
++  }
++
+   return (
+-    <div className="markdown-table-wrapper w-full max-w-full">
+-      <table>{children}</table>
++    <div className="markdown-table-wrapper group relative w-full max-w-full">
++      <button
++        type="button"
++        onClick={handleCopy}
++        aria-label={localize('com_ui_copy_to_clipboard')}
++        className="absolute right-1 top-1 rounded-md border border-border-light bg-surface-primary p-1 text-text-secondary opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100"
++      >
++        {copied ? <CheckMark className="h-4 w-4" /> : <Clipboard size="16" />}
++      </button>
++      <table ref={tableRef}>{children}</table>
+     </div>
+   );
+ });
+diff --git a/client/src/utils/tableClipboard.spec.ts b/client/src/utils/tableClipboard.spec.ts
+new file mode 100644
+index 0000000..8a77300
+--- /dev/null
++++ b/client/src/utils/tableClipboard.spec.ts
+@@ -0,0 +1,32 @@
++import { tableToTsv, tableToCleanHtml } from './tableClipboard';
++
++const build = (html: string): HTMLTableElement => {
++  const host = document.createElement('div');
++  host.innerHTML = html;
++  return host.querySelector('table') as HTMLTableElement;
++};
++
++describe('tableToTsv', () => {
++  it('joins cells with tabs and rows with newlines', () => {
++    const t = build(
++      '<table><thead><tr><th>Raum</th><th>Fläche</th></tr></thead>' +
++        '<tbody><tr><td>01.01</td><td>64,17</td></tr></tbody></table>',
++    );
++    expect(tableToTsv(t)).toBe('Raum\tFläche\n01.01\t64,17');
++  });
++
++  it('collapses inner whitespace so a wrapped cell stays one field', () => {
++    const t = build('<table><tr><td>Büro  Kreisbrand.\n+ Ärztl. Leiter</td></tr></table>');
++    expect(tableToTsv(t)).toBe('Büro Kreisbrand. + Ärztl. Leiter');
++  });
++});
++
++describe('tableToCleanHtml', () => {
++  it('drops renderer attributes but keeps structure and spans', () => {
++    const t = build(
++      '<table class="w-full" style="color:red"><tr><td colspan="2" class="p-2">a</td></tr></table>',
++    );
++    const html = tableToCleanHtml(t);
++    expect(html).toBe('<table><tbody><tr><td colspan="2">a</td></tr></tbody></table>');
++  });
++});
+diff --git a/client/src/utils/tableClipboard.ts b/client/src/utils/tableClipboard.ts
+new file mode 100644
+index 0000000..46f5641
+--- /dev/null
++++ b/client/src/utils/tableClipboard.ts
+@@ -0,0 +1,61 @@
++/**
++ * Serializes a rendered markdown table for the clipboard.
++ *
++ * The whole point is writing BOTH flavours in one clipboard item: `text/html`
++ * is what lets Excel and Word paste a real table, tab-separated `text/plain`
++ * is what a code editor or a terminal gets. Selecting the table by hand copies
++ * only the plain text run together, which is exactly the complaint this
++ * addresses.
++ */
++
++export function tableToTsv(table: HTMLTableElement): string {
++  const rows: string[] = [];
++  for (const row of Array.from(table.rows)) {
++    const cells = Array.from(row.cells).map((cell) =>
++      (cell.innerText || cell.textContent || '').replace(/\s+/g, ' ').trim(),
++    );
++    rows.push(cells.join('\t'));
++  }
++  return rows.join('\n');
++}
++
++/**
++ * A stripped copy of the table: layout classes from the renderer mean nothing
++ * outside the app and make Word render a mess. Structure and text stay,
++ * attributes go.
++ */
++export function tableToCleanHtml(table: HTMLTableElement): string {
++  const clone = table.cloneNode(true) as HTMLTableElement;
++  const strip = (el: Element) => {
++    for (const attr of Array.from(el.attributes)) {
++      if (attr.name !== 'colspan' && attr.name !== 'rowspan') {
++        el.removeAttribute(attr.name);
++      }
++    }
++    for (const child of Array.from(el.children)) {
++      strip(child);
++    }
++  };
++  strip(clone);
++  return clone.outerHTML;
++}
++
++export async function copyTableToClipboard(table: HTMLTableElement): Promise<void> {
++  const tsv = tableToTsv(table);
++  const html = tableToCleanHtml(table);
++
++  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
++    try {
++      await navigator.clipboard.write([
++        new ClipboardItem({
++          'text/html': new Blob([html], { type: 'text/html' }),
++          'text/plain': new Blob([tsv], { type: 'text/plain' }),
++        }),
++      ]);
++      return;
++    } catch {
++      /* Safari without the permission, or an insecure context — fall through. */
++    }
++  }
++  await navigator.clipboard.writeText(tsv);
++}
+diff --git a/packages/data-provider/src/config.ts b/packages/data-provider/src/config.ts
+index c0034d8..87e2159 100644
+--- a/packages/data-provider/src/config.ts
++++ b/packages/data-provider/src/config.ts
+@@ -1166,6 +1166,14 @@ export const interfaceSchema = z
+     customWelcome: z.string().optional(),
+     mcpServers: mcpServersSchema.optional(),
+     modelSelect: z.boolean().optional(),
++    /**
++     * Copy button on rendered markdown tables. Writes the table to the
++     * clipboard as `text/html` AND tab-separated `text/plain`, which is what
++     * lets Excel and Word paste it as a real table instead of scrambled text.
++     * Off by default: an unconfigured deployment renders tables exactly as
++     * upstream does.
++     */
++    tableCopy: z.boolean().optional(),
+     parameters: z.boolean().optional(),
+     multiConvo: z.boolean().optional(),
+     bookmarks: z.boolean().optional(),
