@@ -57,6 +57,7 @@ LibreChat, run stock LibreChat.
 | [001](./patches/001-image-resize) | A | Image resize ceilings (512 / 768 / 2000 / 1568) via `IMAGE_MAX_*` | yes | [#6777](https://github.com/danny-avila/LibreChat/discussions/6777), [#11065](https://github.com/danny-avila/LibreChat/discussions/11065) — open |
 | [002](./patches/002-upload-routing) | A + B | Which upload methods the attachment menu offers, per endpoint and per model spec; optionally drops the choice entirely and routes by file type | yes | [PR #11279](https://github.com/danny-avila/LibreChat/pull/11279) — draft |
 | [003](./patches/003-table-copy) | B | Copy button on markdown tables — `text/html` + TSV in one clipboard item, so Excel pastes a real table | yes | not offered yet |
+| [004](./patches/004-video-tool-uploads) | B | Video/audio uploads for a local tool sidecar, behind `uploadMethods.providerVideoAudio` | yes | not offered yet |
 
 ## The rule every patch follows
 

@@ -1,0 +1,253 @@
+diff --git a/packages/data-provider/src/file-config.spec.ts b/packages/data-provider/src/file-config.spec.ts
+index 94c8556..9ccbb0d 100644
+--- a/packages/data-provider/src/file-config.spec.ts
++++ b/packages/data-provider/src/file-config.spec.ts
+@@ -13,6 +13,7 @@ import {
+   inferMimeType,
+   textMimeTypes,
+   isAutoRouteEnabled,
++  isProviderVideoAudioEnabled,
+   uploadMethodsSchema,
+ } from './file-config';
+ import { EModelEndpoint } from './schemas';
+@@ -1562,3 +1563,40 @@ describe('autoRoute through the config pipeline', () => {
+     expect(() => uploadMethodsSchema.parse({ autoroute: true })).toThrow();
+   });
+ });
++
++describe('providerVideoAudio through the config pipeline', () => {
++  it('is accepted by the strict schema and survives endpoint resolution', () => {
++    expect(uploadMethodsSchema.parse({ providerVideoAudio: true })).toEqual({
++      providerVideoAudio: true,
++    });
++
++    const merged = mergeFileConfig({
++      endpoints: { Cortecs: { uploadMethods: { providerVideoAudio: true } } },
++    });
++    const endpointConfig = getEndpointFileConfig({
++      fileConfig: merged,
++      endpoint: 'Cortecs',
++      endpointType: EModelEndpoint.custom,
++    });
++
++    expect(endpointConfig.uploadMethods).toEqual({ providerVideoAudio: true });
++  });
++
++  it('is off unless something explicitly enables it', () => {
++    expect(isProviderVideoAudioEnabled()).toBe(false);
++    expect(isProviderVideoAudioEnabled({}, {})).toBe(false);
++  });
++
++  it('uses the endpoint value when the model spec does not configure it', () => {
++    expect(isProviderVideoAudioEnabled(undefined, { providerVideoAudio: true })).toBe(true);
++  });
++
++  it('lets the model spec override the endpoint in either direction', () => {
++    expect(
++      isProviderVideoAudioEnabled({ providerVideoAudio: false }, { providerVideoAudio: true }),
++    ).toBe(false);
++    expect(
++      isProviderVideoAudioEnabled({ providerVideoAudio: true }, { providerVideoAudio: false }),
++    ).toBe(true);
++  });
++});
+diff --git a/packages/data-provider/src/file-config.ts b/packages/data-provider/src/file-config.ts
+index c48418e..35a7a2f 100644
+--- a/packages/data-provider/src/file-config.ts
++++ b/packages/data-provider/src/file-config.ts
+@@ -459,11 +459,11 @@ export const fileConfig = {
+ const supportedMimeTypesSchema = z.array(z.string()).optional();
+ 
+ /**
+- * Opt-out switches for the upload methods offered in the attachment menu.
++ * Configuration for the upload methods offered in the attachment menu.
+  *
+- * All four entries default to `true`, i.e. omitting the object leaves the current
+- * behaviour untouched. They only ever remove an option, never add one: a method
+- * the provider cannot do is still not offered, no matter what is configured.
++ * The four method switches default to `true` and only remove options. The two
++ * behaviour switches (`providerVideoAudio` and `autoRoute`) default to `false`.
++ * Omitting the object therefore leaves the current behaviour untouched.
+  *
+  * THIS IS A SURFACE SWITCH, NOT AN ACCESS CONTROL. It only decides which entries
+  * the attachment menu and the drag-and-drop dialog render. The server does not
+@@ -501,6 +501,16 @@ export const uploadMethodsSchema = z
+      * upload for another.
+      */
+     provider: z.boolean().optional(),
++    /**
++     * Allow raw video and audio files through the direct provider upload branch
++     * even when LibreChat does not classify the endpoint as natively capable of
++     * receiving them.
++     *
++     * This is an explicit opt-in for deployments where a sidecar/tool consumes
++     * the stored file. It only widens the conversation upload surface; it does
++     * not make the selected model understand video or audio. Default: `false`.
++     */
++    providerVideoAudio: z.boolean().optional(),
+     /**
+      * "Upload as Text" — extract the text server-side and send that instead of the
+      * file. Depending on the file this is plain text extraction or OCR; the option
+@@ -586,6 +596,15 @@ export const isAutoRouteEnabled = (
+   endpointMethods?: TUploadMethods | null,
+ ): boolean => specMethods?.autoRoute ?? endpointMethods?.autoRoute ?? false;
+ 
++/**
++ * Opt-in for video/audio on the direct provider branch. Like `autoRoute`, it is
++ * off by default and the model spec takes precedence over the endpoint.
++ */
++export const isProviderVideoAudioEnabled = (
++  specMethods?: TUploadMethods | null,
++  endpointMethods?: TUploadMethods | null,
++): boolean => specMethods?.providerVideoAudio ?? endpointMethods?.providerVideoAudio ?? false;
++
+ /**
+  * Merges two `uploadMethods` objects per key, with `override` winning.
+  *
+diff --git a/packages/data-provider/src/upload-options.spec.ts b/packages/data-provider/src/upload-options.spec.ts
+index fd4512d..14cee6e 100644
+--- a/packages/data-provider/src/upload-options.spec.ts
++++ b/packages/data-provider/src/upload-options.spec.ts
+@@ -19,6 +19,8 @@ const docx = (name = 'notes.docx'): UploadCandidateFile => ({
+   type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+ });
+ const csv = (name = 'table.csv'): UploadCandidateFile => ({ name, type: 'text/csv' });
++const mp4 = (name = 'clip.mp4'): UploadCandidateFile => ({ name, type: 'video/mp4' });
++const mp3 = (name = 'audio.mp3'): UploadCandidateFile => ({ name, type: 'audio/mpeg' });
+ 
+ const types = (params: UploadOptionsParams) =>
+   getAvailableUploadOptions(params).map((option) => option.type);
+@@ -311,6 +313,62 @@ describe('getAvailableUploadOptions', () => {
+       ).toEqual([]);
+     });
+ 
++    it('does not widen a custom endpoint when providerVideoAudio is unset', () => {
++      expect(
++        types({ endpoint: 'Cortecs', endpointType: EModelEndpoint.custom, files: [mp4()] }),
++      ).toEqual([]);
++      expect(
++        types({ endpoint: 'Cortecs', endpointType: EModelEndpoint.custom, files: [mp3()] }),
++      ).toEqual([]);
++    });
++
++    it('allows raw video and audio on an opted-in custom endpoint', () => {
++      const params = {
++        endpoint: 'Cortecs',
++        endpointType: EModelEndpoint.custom,
++        endpointUploadMethods: { providerVideoAudio: true },
++      };
++
++      expect(getAvailableUploadOptions({ ...params, files: [mp4()] })).toEqual([
++        { type: UploadOptionType.provider, fileType: 'image_document_video_audio' },
++      ]);
++      expect(types({ ...params, files: [mp3()] })).toEqual([UploadOptionType.provider]);
++    });
++
++    it('lets the model spec override the endpoint providerVideoAudio setting', () => {
++      const custom = {
++        endpoint: 'Cortecs',
++        endpointType: EModelEndpoint.custom,
++        files: [mp4()],
++      };
++
++      expect(
++        types({
++          ...custom,
++          endpointUploadMethods: { providerVideoAudio: true },
++          specUploadMethods: { providerVideoAudio: false },
++        }),
++      ).toEqual([]);
++      expect(
++        types({
++          ...custom,
++          endpointUploadMethods: { providerVideoAudio: false },
++          specUploadMethods: { providerVideoAudio: true },
++        }),
++      ).toEqual([UploadOptionType.provider]);
++    });
++
++    it('does not let providerVideoAudio bypass provider:false', () => {
++      expect(
++        types({
++          endpoint: 'Cortecs',
++          endpointType: EModelEndpoint.custom,
++          endpointUploadMethods: { provider: false, providerVideoAudio: true },
++          files: [mp4()],
++        }),
++      ).toEqual([]);
++    });
++
+     it('drops the image option for a non-image on an image-only provider', () => {
+       expect(types({ endpoint: EModelEndpoint.azureOpenAI, files: [pdf()] })).toEqual([]);
+       expect(types({ endpoint: EModelEndpoint.azureOpenAI, files: [png()] })).toEqual([
+@@ -506,6 +564,22 @@ describe('autoRoute and per-file routing', () => {
+       expect(option?.type).toBe(UploadOptionType.provider);
+     });
+ 
++    it('routes custom video directly only after providerVideoAudio is enabled', () => {
++      const custom = {
++        endpoint: 'Cortecs',
++        endpointType: EModelEndpoint.custom,
++        contextCapabilityEnabled: true,
++      };
++
++      expect(resolveUploadForFile(mp4(), custom)?.type).toBe(UploadOptionType.context);
++      expect(
++        resolveUploadForFile(mp4(), {
++          ...custom,
++          endpointUploadMethods: { providerVideoAudio: true },
++        })?.type,
++      ).toBe(UploadOptionType.provider);
++    });
++
+     it('returns null when no method can take the file', () => {
+       expect(
+         resolveUploadForFile(
+diff --git a/packages/data-provider/src/upload-options.ts b/packages/data-provider/src/upload-options.ts
+index 901d959..124f992 100644
+--- a/packages/data-provider/src/upload-options.ts
++++ b/packages/data-provider/src/upload-options.ts
+@@ -4,6 +4,7 @@ import {
+   inferMimeType,
+   isAutoRouteEnabled,
+   isBedrockDocumentType,
++  isProviderVideoAudioEnabled,
+   isUploadMethodEnabled,
+ } from './file-config';
+ import type { TUploadMethods } from './file-config';
+@@ -90,9 +91,10 @@ export interface UploadOptionsParams {
+  * the agent builder in the side panel upload without asking this function. See
+  * the SCOPE section on `uploadMethodsSchema` for what that means.
+  *
+- * `uploadMethods` can only remove options here, never add one: every entry still
+- * has to pass its own capability and permission check first. And it is a surface
+- * switch only — the server does not enforce it.
++ * The four upload-method switches can only remove options here. The explicit
++ * `providerVideoAudio` opt-in widens the direct branch to video/audio for a
++ * deployment whose sidecar/tool consumes the stored file. These remain surface
++ * switches only — the server does not enforce them.
+  *
+  * An empty result means there is nothing to offer for these files; callers must
+  * reject the upload rather than fall back to uploading anyway.
+@@ -129,6 +131,10 @@ export function getAvailableUploadOptions(params: UploadOptionsParams): UploadOp
+     specUploadMethods,
+     endpointUploadMethods,
+   );
++  const providerVideoAudioEnabled = isProviderVideoAudioEnabled(
++    specUploadMethods,
++    endpointUploadMethods,
++  );
+ 
+   let currentProvider = provider || endpoint;
+   // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+@@ -163,7 +169,9 @@ export function getAvailableUploadOptions(params: UploadOptionsParams): UploadOp
+ 
+     if (supportsDocuments) {
+       const supportsImageDocVideoAudio =
+-        currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
++        currentProvider === EModelEndpoint.google ||
++        currentProvider === Providers.OPENROUTER ||
++        providerVideoAudioEnabled;
+       const isBedrock =
+         currentProvider === Providers.BEDROCK || endpointType === EModelEndpoint.bedrock;
+
