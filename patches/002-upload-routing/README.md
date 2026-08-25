@@ -96,13 +96,24 @@ description was standing in for.
 `assistants`/`azureAssistants` endpoints and the agent builder side panel have
 their own upload flows and are deliberately **not** covered.
 
+Two more limits of `autoRoute` specifically, both known and neither fixed:
+
+- **The SharePoint picker lives in the menu**, so it is unreachable while
+  `autoRoute` is on. A deployment with `sharePointFilePickerEnabled` should
+  leave `autoRoute` off until that is addressed.
+- **Only the direct branch checks the file type.** `context`, `file_search` and
+  `execute_code` are offered without one, so a file the text extractor cannot
+  read is still routed to it and fails at validation instead of being rejected
+  up front. Fixing this means filtering `context` against the same MIME lists
+  `validateFiles` uses.
+
 This is a surface, not an access control. The server does not enforce it.
 
 ## Contents
 
 | File | Purpose |
 |---|---|
-| `002-upload-routing.patch` | `git diff` against `v0.8.7`, 26 files |
+| `002-upload-routing.patch` | `git diff` against `v0.8.7`, 28 files |
 | `upstream.sha256` | checksums of the 18 pre-existing files it touches |
 
 Verify it still applies:

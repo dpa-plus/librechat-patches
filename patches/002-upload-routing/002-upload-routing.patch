@@ -132,7 +132,7 @@ index 89bd49f..096e0e8 100644
      return (
        <AttachFile
 diff --git a/client/src/components/Chat/Input/Files/AttachFileMenu.tsx b/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
-index 952b337..382e95b 100644
+index 952b337..521d636 100644
 --- a/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
 +++ b/client/src/components/Chat/Input/Files/AttachFileMenu.tsx
 @@ -1,13 +1,6 @@
@@ -230,7 +230,7 @@ index 952b337..382e95b 100644
        if (!inputRef.current) {
          return;
        }
-@@ -144,105 +139,136 @@ const AttachFileMenu = ({
+@@ -144,105 +139,138 @@ const AttachFileMenu = ({
      [endpointFileConfig?.supportedMimeTypes],
    );
  
@@ -312,17 +312,12 @@ index 952b337..382e95b 100644
 -        (currentProvider === EModelEndpoint.azureOpenAI ||
 -          endpointType === EModelEndpoint.azureOpenAI) &&
 -        useResponsesApi === true;
-+  /**
-+   * With no option left there is nothing to open: the popup would be an empty
-+   * box, and with SharePoint enabled its entry would still be there with an
-+   * empty `subItems`, which `DropdownPopup` renders as an ordinary clickable
-+   * item that does nothing. The trigger is disabled instead, which also covers
-+   * the window in which the configuration is still loading.
-+   */
 +  const routedUpload = useRoutedUpload({
 +    handleFiles,
 +    setEphemeralAgent,
 +    setFilesLoading,
++    currentFileCount: files?.size ?? 0,
++    fileLimit: endpointFileConfig?.fileLimit,
 +  });
  
 -      if (
@@ -378,6 +373,13 @@ index 952b337..382e95b 100644
 -          icon: <FileType2Icon className="icon-md" />,
 -        });
 -      }
++  /**
++   * With no option left there is nothing to open: the popup would be an empty
++   * box, and with SharePoint enabled its entry would still be there with an
++   * empty `subItems`, which `DropdownPopup` renders as an ordinary clickable
++   * item that does nothing. The trigger is disabled instead, which also covers
++   * the window in which the configuration is still loading.
++   */
 +  const hasUploadOptions = uploadOptions.length > 0;
 +  const isUploadDisabled = (disabled ?? false) || !hasUploadOptions;
  
@@ -450,7 +452,7 @@ index 952b337..382e95b 100644
      if (sharePointEnabled) {
        const sharePointItems = createMenuItems(() => {
          setIsSharePointDialogOpen(true);
-@@ -260,19 +286,44 @@ const AttachFileMenu = ({
+@@ -260,19 +288,44 @@ const AttachFileMenu = ({
      return localItems;
    }, [
      localize,
@@ -502,7 +504,7 @@ index 952b337..382e95b 100644
    const menuTrigger = (
      <TooltipAnchor
        render={
-@@ -310,21 +361,35 @@ const AttachFileMenu = ({
+@@ -310,21 +363,35 @@ const AttachFileMenu = ({
        <FileUpload
          ref={inputRef}
          handleFileChange={(e) => {
@@ -1617,10 +1619,10 @@ index 0000000..a2d878d
 +});
 diff --git a/client/src/hooks/Files/__tests__/useRoutedUpload.spec.tsx b/client/src/hooks/Files/__tests__/useRoutedUpload.spec.tsx
 new file mode 100644
-index 0000000..79eb77a
+index 0000000..1926c7e
 --- /dev/null
 +++ b/client/src/hooks/Files/__tests__/useRoutedUpload.spec.tsx
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,190 @@
 +import { renderHook } from '@testing-library/react';
 +import { EToolResources } from 'librechat-data-provider';
 +import type { RoutedFile } from '../useUploadOptions';
@@ -1739,21 +1741,94 @@ index 0000000..79eb77a
 +    );
 +  });
 +});
++
++describe('useRoutedUpload — limits and the empty set', () => {
++  const setup = (extra: Record<string, unknown> = {}) => {
++    const handleFiles = jest.fn().mockResolvedValue(undefined);
++    const setFilesLoading = jest.fn();
++    const result = renderHook(() =>
++      useRoutedUpload({
++        handleFiles,
++        setEphemeralAgent: jest.fn() as never,
++        setFilesLoading,
++        ...extra,
++      }),
++    ).result;
++    return { result, handleFiles, setFilesLoading };
++  };
++
++  beforeEach(() => mockShowToast.mockClear());
++
++  /**
++   * The reason this is checked here and not left to `validateFiles`: the
++   * `handleFiles` this hook calls carries the file list it closed over, so every
++   * group would be measured against the same starting point.
++   */
++  it('counts the whole drop against fileLimit, not each group', async () => {
++    const { result, handleFiles } = setup({ fileLimit: 3, currentFileCount: 0 });
++    await result.current([
++      routedTo('a.pdf', undefined),
++      routedTo('b.pdf', undefined),
++      routedTo('c.xlsx', EToolResources.execute_code),
++      routedTo('d.xlsx', EToolResources.execute_code),
++    ]);
++
++    expect(handleFiles).not.toHaveBeenCalled();
++    expect(mockShowToast).toHaveBeenCalledWith(
++      expect.objectContaining({ message: expect.stringContaining('File limit reached') }),
++    );
++  });
++
++  it('counts files that are already attached', async () => {
++    const { result, handleFiles } = setup({ fileLimit: 3, currentFileCount: 2 });
++    await result.current([routedTo('a.pdf', undefined), routedTo('b.pdf', undefined)]);
++    expect(handleFiles).not.toHaveBeenCalled();
++  });
++
++  it('lets a drop through that fits', async () => {
++    const { result, handleFiles } = setup({ fileLimit: 3, currentFileCount: 0 });
++    await result.current([routedTo('a.pdf', undefined), routedTo('b.pdf', undefined)]);
++    expect(handleFiles).toHaveBeenCalledTimes(1);
++  });
++
++  it('does not check a limit nobody configured', async () => {
++    const { result, handleFiles } = setup();
++    await result.current(Array.from({ length: 40 }, (_, i) => routedTo(`f${i}.pdf`, undefined)));
++    expect(handleFiles).toHaveBeenCalledTimes(1);
++  });
++
++  /**
++   * An unavailable configuration hands over an empty set. Returning quietly
++   * would drop the files with no sign that anything happened — the exact
++   * symptom the routing was meant to remove.
++   */
++  it('says something when the set is empty rather than failing silently', async () => {
++    const { result, handleFiles, setFilesLoading } = setup();
++    await result.current([]);
++
++    expect(handleFiles).not.toHaveBeenCalled();
++    expect(mockShowToast).toHaveBeenCalledWith(
++      expect.objectContaining({ message: 'com_ui_upload_no_options' }),
++    );
++    expect(setFilesLoading).toHaveBeenCalledWith(false);
++  });
++});
 diff --git a/client/src/hooks/Files/index.ts b/client/src/hooks/Files/index.ts
-index 7fa4df5..8da5d55 100644
+index 7fa4df5..aa5dd36 100644
 --- a/client/src/hooks/Files/index.ts
 +++ b/client/src/hooks/Files/index.ts
-@@ -6,6 +6,8 @@ export { default as useFileDeletion } from './useFileDeletion';
+@@ -6,6 +6,9 @@ export { default as useFileDeletion } from './useFileDeletion';
  export { default as useUpdateFiles } from './useUpdateFiles';
  export { default as useDragHelpers } from './useDragHelpers';
  export { default as useFileMap } from './useFileMap';
 +export { default as useUploadMethods } from './useUploadMethods';
++export { default as useRoutedUpload } from './useRoutedUpload';
 +export { default as useUploadOptions } from './useUploadOptions';
  export { default as useSharePointPicker } from './useSharePointPicker';
  export { default as useSharePointDownload } from './useSharePointDownload';
  export { default as useSharePointFileHandling } from './useSharePointFileHandling';
 diff --git a/client/src/hooks/Files/useDragHelpers.ts b/client/src/hooks/Files/useDragHelpers.ts
-index 847884c..49be4af 100644
+index 847884c..7a9148a 100644
 --- a/client/src/hooks/Files/useDragHelpers.ts
 +++ b/client/src/hooks/Files/useDragHelpers.ts
 @@ -1,28 +1,24 @@
@@ -1791,7 +1866,7 @@ index 847884c..49be4af 100644
  import useLocalize from '../useLocalize';
  
  export default function useDragHelpers() {
-@@ -31,17 +27,42 @@ export default function useDragHelpers() {
+@@ -31,18 +27,48 @@ export default function useDragHelpers() {
    const localize = useLocalize();
    const [showModal, setShowModal] = useState(false);
    const [draggedFiles, setDraggedFiles] = useState<File[]>([]);
@@ -1818,10 +1893,9 @@ index 847884c..49be4af 100644
 -  const isAssistants = useMemo(
 -    () => isAssistantsEndpoint(conversation?.endpoint),
 -    [conversation?.endpoint],
--  );
 +  const isAssistants = useMemo(() => isAssistantsEndpoint(endpoint), [endpoint]);
- 
-   const { handleFiles } = useFileHandling();
++
++  const { handleFiles, files } = useFileHandling();
 +  /**
 +   * Reactive for exactly the files whose decision is still outstanding, so the
 +   * effect below re-runs the moment the configuration for them becomes known.
@@ -1831,16 +1905,24 @@ index 847884c..49be4af 100644
 +    files: pendingFiles,
 +  });
 +
-+  const routedUpload = useRoutedUpload({ handleFiles, setEphemeralAgent });
++  const routedUpload = useRoutedUpload({
++    handleFiles,
++    setEphemeralAgent,
++    currentFileCount: files?.size ?? 0,
++    fileLimit: dragDropContext.endpointFileConfig?.fileLimit,
++  });
 +
 +  const uploadRouted = useCallback(
 +    (dropped: File[]) => routedUpload(getRouteForFiles(dropped).routed),
 +    [routedUpload, getRouteForFiles],
-+  );
+   );
  
+-  const { handleFiles } = useFileHandling();
+-
    const handleOptionSelect = useCallback(
      (toolResource: EToolResources | undefined) => {
-@@ -61,35 +82,24 @@ export default function useDragHelpers() {
+       /** File search is not automatically enabled to simulate legacy behavior */
+@@ -61,35 +87,24 @@ export default function useDragHelpers() {
  
    /** Use refs to avoid re-creating the drop handler */
    const handleFilesRef = useRef(handleFiles);
@@ -1882,7 +1964,7 @@ index 847884c..49be4af 100644
          });
          if (endpointCfg?.disabled === true) {
            showToast({
-@@ -100,53 +110,86 @@ export default function useDragHelpers() {
+@@ -100,53 +115,86 @@ export default function useDragHelpers() {
          }
        }
  
@@ -2003,10 +2085,10 @@ index 847884c..49be4af 100644
        accept: [NativeTypes.FILE],
 diff --git a/client/src/hooks/Files/useRoutedUpload.ts b/client/src/hooks/Files/useRoutedUpload.ts
 new file mode 100644
-index 0000000..92334a5
+index 0000000..67d75a0
 --- /dev/null
 +++ b/client/src/hooks/Files/useRoutedUpload.ts
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,113 @@
 +import { useCallback } from 'react';
 +import { useToastContext } from '@librechat/client';
 +import { EToolResources, groupRoutedFiles } from 'librechat-data-provider';
@@ -2019,6 +2101,9 @@ index 0000000..92334a5
 +  handleFiles: (files: File[], toolResource?: string) => Promise<void> | void;
 +  setEphemeralAgent: SetterOrUpdater<t.TEphemeralAgent | null>;
 +  setFilesLoading?: (loading: boolean) => void;
++  /** Already-attached files, so the limits can be checked across all groups. */
++  currentFileCount?: number;
++  fileLimit?: number;
 +}
 +
 +/**
@@ -2033,6 +2118,8 @@ index 0000000..92334a5
 +  handleFiles,
 +  setEphemeralAgent,
 +  setFilesLoading,
++  currentFileCount = 0,
++  fileLimit,
 +}: UseRoutedUploadParams) {
 +  const { showToast } = useToastContext();
 +  const localize = useLocalize();
@@ -2054,6 +2141,28 @@ index 0000000..92334a5
 +      }
 +
 +      if (groups.length === 0) {
++        /**
++         * Nothing was rejected either, so the caller handed over an empty set —
++         * which happens when the configuration turned out to be unavailable.
++         * Saying so beats returning quietly and losing the files in silence.
++         */
++        if (rejected.length === 0) {
++          showToast({ message: localize('com_ui_upload_no_options'), status: 'error' });
++        }
++        setFilesLoading?.(false);
++        return;
++      }
++
++      /**
++       * `validateFiles` counts against the files already in state, and the
++       * `handleFiles` this loop calls carries the list it closed over. Awaiting
++       * the groups does not refresh it, so each group would be measured against
++       * the same starting point and `fileLimit` would apply per group instead of
++       * per drop. Checked once, over everything, before any of it goes out.
++       */
++      const total = groups.reduce((n, group) => n + group.files.length, 0);
++      if (fileLimit != null && currentFileCount + total > fileLimit) {
++        showToast({ message: `File limit reached: ${fileLimit} files`, status: 'error' });
 +        setFilesLoading?.(false);
 +        return;
 +      }
@@ -2066,18 +2175,31 @@ index 0000000..92334a5
 +       * together would let every one of them see an empty list and walk past
 +       * `fileLimit` and `totalSizeLimit` a group at a time.
 +       */
-+      for (const group of groups) {
-+        if (
-+          group.toolResource === EToolResources.file_search ||
-+          group.toolResource === EToolResources.execute_code
-+        ) {
-+          const toolResource = group.toolResource;
-+          setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
++      try {
++        for (const group of groups) {
++          if (
++            group.toolResource === EToolResources.file_search ||
++            group.toolResource === EToolResources.execute_code
++          ) {
++            const toolResource = group.toolResource;
++            setEphemeralAgent((prev) => ({ ...prev, [toolResource]: true }));
++          }
++          await handleFiles(group.files, group.toolResource);
 +        }
-+        await handleFiles(group.files, group.toolResource);
++      } catch (error) {
++        console.error('routed upload failed', error);
++        setFilesLoading?.(false);
 +      }
 +    },
-+    [handleFiles, setEphemeralAgent, setFilesLoading, showToast, localize],
++    [
++      handleFiles,
++      setEphemeralAgent,
++      setFilesLoading,
++      showToast,
++      localize,
++      currentFileCount,
++      fileLimit,
++    ],
 +  );
 +}
 diff --git a/client/src/hooks/Files/useUploadMethods.ts b/client/src/hooks/Files/useUploadMethods.ts
@@ -2170,13 +2292,14 @@ index 0000000..e0e8bb5
 +}
 diff --git a/client/src/hooks/Files/useUploadOptions.ts b/client/src/hooks/Files/useUploadOptions.ts
 new file mode 100644
-index 0000000..0a252d8
+index 0000000..578688e
 --- /dev/null
 +++ b/client/src/hooks/Files/useUploadOptions.ts
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,219 @@
 +import { useMemo, useRef, useCallback } from 'react';
 +import { useRecoilValue } from 'recoil';
 +import {
++  Constants,
 +  defaultAgentCapabilities,
 +  getAvailableUploadOptions,
 +  resolveUploadForFile,
@@ -2292,7 +2415,9 @@ index 0000000..0a252d8
 +   * Use definition for agents endpoint for ephemeral agents
 +   * */
 +  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-+  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
++  const ephemeralAgent = useRecoilValue(
++    ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
++  );
 +  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
 +    agentId,
 +    ephemeralAgent,
@@ -2359,13 +2484,21 @@ index 0000000..0a252d8
 +    };
 +  }, []);
 +
++  /**
++   * Gated on `isReady` for the same reason `options` is. An unresolved config is
++   * indistinguishable from an unset one, and reporting `autoRoute` early lets a
++   * caller skip the checks that would otherwise reject: the paste path branches
++   * on `autoRoute` before it looks at the options, so an `unavailable` config
++   * would route an empty list and drop the files without a word.
++   */
 +  const autoRoute = useMemo(
 +    () =>
++      isReady &&
 +      shouldAutoRoute({
 +        specUploadMethods: baseParams.specUploadMethods,
 +        endpointUploadMethods: baseParams.endpointUploadMethods,
 +      }),
-+    [baseParams.specUploadMethods, baseParams.endpointUploadMethods],
++    [isReady, baseParams.specUploadMethods, baseParams.endpointUploadMethods],
 +  );
 +
 +  const options = useMemo(
@@ -2732,7 +2865,7 @@ index 0000000..54bb109
 +  });
 +});
 diff --git a/client/src/hooks/Input/useTextarea.ts b/client/src/hooks/Input/useTextarea.ts
-index 0e54270..f066e67 100644
+index 0e54270..8260a3b 100644
 --- a/client/src/hooks/Input/useTextarea.ts
 +++ b/client/src/hooks/Input/useTextarea.ts
 @@ -1,7 +1,9 @@
@@ -2778,15 +2911,18 @@ index 0e54270..f066e67 100644
  export default function useTextarea({
    textAreaRef,
    submitButtonRef,
-@@ -45,6 +60,7 @@ export default function useTextarea({
+@@ -45,8 +60,9 @@ export default function useTextarea({
    const localize = useLocalize();
    const getSender = useGetSender();
    const isComposing = useRef(false);
 +  const { showToast } = useToastContext();
    const agentsMap = useAgentsMapContext();
-   const { handleFiles } = useFileHandling();
+-  const { handleFiles } = useFileHandling();
++  const { handleFiles, files } = useFileHandling();
    const assistantMap = useAssistantsMapContext();
-@@ -264,6 +280,103 @@ export default function useTextarea({
+   const checkHealth = useInteractionHealthCheck();
+   const enterToSend = useRecoilValue(store.enterToSend);
+@@ -264,6 +280,109 @@ export default function useTextarea({
      isComposing.current = false;
    };
  
@@ -2830,7 +2966,13 @@ index 0e54270..f066e67 100644
 +  const setEphemeralAgent = useSetRecoilState(
 +    ephemeralAgentByConvoId(dragDropContext.conversationId ?? Constants.NEW_CONVO),
 +  );
-+  const routedUpload = useRoutedUpload({ handleFiles, setEphemeralAgent, setFilesLoading });
++  const routedUpload = useRoutedUpload({
++    handleFiles,
++    setEphemeralAgent,
++    setFilesLoading,
++    currentFileCount: files?.size ?? 0,
++    fileLimit: dragDropContext.endpointFileConfig?.fileLimit,
++  });
 +
 +  const uploadRoutedPaste = useCallback(
 +    (pasted: File[]) => routedUpload(getRouteForFiles(pasted).routed),
@@ -2890,7 +3032,7 @@ index 0e54270..f066e67 100644
    const handlePaste = useCallback(
      (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
        const textArea = textAreaRef.current;
-@@ -277,7 +390,6 @@ export default function useTextarea({
+@@ -277,7 +396,6 @@ export default function useTextarea({
        }
  
        if (clipboardData.files.length > 0) {
@@ -2898,7 +3040,7 @@ index 0e54270..f066e67 100644
          const timestampedFiles: File[] = [];
          for (const file of clipboardData.files) {
            const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
-@@ -285,10 +397,67 @@ export default function useTextarea({
+@@ -285,10 +403,67 @@ export default function useTextarea({
            });
            timestampedFiles.push(newFile);
          }
@@ -2968,24 +3110,16 @@ index 0e54270..f066e67 100644
  
    return {
 diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
-index 81df389..1fb1b73 100644
+index 81df389..22196d2 100644
 --- a/client/src/locales/en/translation.json
 +++ b/client/src/locales/en/translation.json
-@@ -1856,6 +1856,7 @@
-   "com_ui_upload_image_input": "Upload Image",
-   "com_ui_upload_invalid": "Invalid file for upload. Must be an image not exceeding the limit",
-   "com_ui_upload_invalid_var": "Invalid file for upload. Must be an image not exceeding {{0}} MB",
-+  "com_ui_upload_no_options": "No upload option is available for these files here. Try a different file type, or check the upload settings for this model.",
-   "com_ui_upload_ocr_text": "Upload as Text",
-   "com_ui_upload_provider": "Upload to Provider",
-   "com_ui_upload_success": "Successfully uploaded file",
-@@ -1925,5 +1926,6 @@
+@@ -1925,5 +1925,7 @@
    "com_ui_zoom_in": "Zoom in",
    "com_ui_zoom_level": "Zoom level",
    "com_ui_zoom_out": "Zoom out",
--  "com_user_message": "You"
-+  "com_user_message": "You",
-+  "com_ui_upload_no_options_partial": "Some files have no upload option here and were skipped: {{0}}"
++  "com_ui_upload_no_options": "No upload option is available for these files here. Try a different file type, or check the upload settings for this model.",
++  "com_ui_upload_no_options_partial": "Some files have no upload option here and were skipped: {{0}}",
+   "com_user_message": "You"
  }
 diff --git a/librechat.example.yaml b/librechat.example.yaml
 index bfdcc60..f5b36d1 100644
