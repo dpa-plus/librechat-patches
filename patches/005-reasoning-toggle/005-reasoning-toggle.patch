@@ -106,7 +106,7 @@ index 0000000..f88d56e
 +
 +export default memo(ReasoningToggle);
 diff --git a/client/src/locales/de/translation.json b/client/src/locales/de/translation.json
-index 4d3a34f..d7fe96d 100644
+index 5bb7879..1af2af2 100644
 --- a/client/src/locales/de/translation.json
 +++ b/client/src/locales/de/translation.json
 @@ -1437,6 +1437,7 @@
@@ -118,13 +118,13 @@ index 4d3a34f..d7fe96d 100644
    "com_ui_redirect_uri_instructions": "Kopiere diese Weiterleitungs-URI und konfiguriere sie in deinen OAuth-Anbietereinstellungen.",
    "com_ui_redirecting_to_provider": "Weiterleitung zu {{0}}, einen Moment bitte...",
 diff --git a/client/src/locales/en/translation.json b/client/src/locales/en/translation.json
-index 22196d2..a779eb5 100644
+index e46eb23..b60b4a9 100644
 --- a/client/src/locales/en/translation.json
 +++ b/client/src/locales/en/translation.json
-@@ -1927,5 +1927,6 @@
-   "com_ui_zoom_out": "Zoom out",
+@@ -1928,5 +1928,6 @@
    "com_ui_upload_no_options": "No upload option is available for these files here. Try a different file type, or check the upload settings for this model.",
    "com_ui_upload_no_options_partial": "Some files have no upload option here and were skipped: {{0}}",
+   "com_ui_upload_cancelled_convo_switch": "Upload cancelled: the conversation changed before the files could be processed.",
 +  "com_ui_reasoning_toggle": "Think thoroughly",
    "com_user_message": "You"
  }

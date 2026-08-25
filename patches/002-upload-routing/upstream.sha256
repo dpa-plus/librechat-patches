@@ -16,3 +16,4 @@ a64a8d0cb7ffd5028051d485204524eb93e7f32d328c25e99a1cc404da574f92  client/src/hoo
 cb8eee238063ceb384479269aa365a9743da234cdda3aea0f39fc1dc2b390ae0  packages/data-provider/src/index.ts
 38ef6cdb2771cf219feb48688048f047a036aadcb57d0c33eaa153b3418aa96e  packages/data-provider/src/models.ts
 48866cd39ba07d3572a08e06075b059c8dbaf8d9d9868aee67569c1d8d65289e  packages/data-provider/src/types/files.ts
+52dc2c17075cc82fd7f976c9df49c8588ad8d6f27c3957a4316f123824a263c5  client/src/locales/de/translation.json

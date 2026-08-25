@@ -76,8 +76,13 @@ jobs:
         if: steps.v.outputs.changed == 'true' && steps.diff.outputs.drift == '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Als Env-Variable, nie per ${{ }} in den Skripttext interpoliert:
+          # der Report enthaelt Backticks, die die Shell sonst als
+          # Kommandosubstitution ausfuehrt (kaputter Body, Injection-Flaeche).
+          REPORT: ${{ steps.diff.outputs.report }}
+          CURRENT: ${{ steps.v.outputs.current }}
+          LATEST: ${{ steps.v.outputs.latest }}
         run: |
-          LATEST="${{ steps.v.outputs.latest }}"
           BRANCH="upstream/$LATEST"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -88,19 +93,22 @@ jobs:
           git push -q origin "$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "Basis auf $LATEST heben" \
-            --body "$(printf 'Upstream hat **%s** veroeffentlicht (bisher: %s).\n\nAlle gepatchten Originaldateien sind darin **unveraendert**:\n\n%b\nDer Build-Workflow prueft die Pruefsummen erneut und laesst den Smoke-Test laufen. Ist er gruen, kann gemergt werden.\n\nAusrollen bleibt ein separater, bewusster Schritt.' "$LATEST" "${{ steps.v.outputs.current }}" "${{ steps.diff.outputs.report }}")"
+            --body "$(printf 'Upstream hat **%s** veroeffentlicht (bisher: %s).\n\nAlle gepatchten Originaldateien sind darin **unveraendert**:\n\n%b\nDer Build-Workflow prueft die Pruefsummen erneut und laesst den Smoke-Test laufen. Ist er gruen, kann gemergt werden.\n\nAusrollen bleibt ein separater, bewusster Schritt.' "$LATEST" "$CURRENT" "$REPORT")"
 
       # Fall B: eine gepatchte Datei hat sich geaendert -> Issue, Mensch noetig.
       - name: Issue bei Abweichung
         if: steps.v.outputs.changed == 'true' && steps.diff.outputs.drift == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Env-Variable statt ${{ }}-Interpolation, siehe PR-Schritt.
+          REPORT: ${{ steps.diff.outputs.report }}
+          CURRENT: ${{ steps.v.outputs.current }}
+          LATEST: ${{ steps.v.outputs.latest }}
         run: |
-          LATEST="${{ steps.v.outputs.latest }}"
           TITLE="Patch nachziehen: $LATEST veraendert gepatchte Dateien"
           gh issue list --state open --search "$TITLE in:title" --json title --jq '.[].title' | grep -qxF "$TITLE" && { echo "Issue existiert bereits"; exit 0; }
           gh issue create --title "$TITLE" \
-            --body "$(printf 'Upstream hat **%s** veroeffentlicht (bisher: %s). Mindestens eine von uns gepatchte Datei hat sich geaendert:\n\n%b\n**Vorgehen**\n\n1. Neue Originaldatei ziehen und mit unserer Fassung vergleichen.\n2. Aenderung von upstream uebernehmen, unseren Patch erneut anwenden.\n3. `upstream.sha256` aktualisieren.\n4. `ARG LIBRECHAT_VERSION` im Dockerfile heben.\n\nNicht einfach den Basis-Tag hochziehen: unsere Kopie wuerde sonst die Aenderung von upstream stillschweigend ueberschreiben.' "$LATEST" "${{ steps.v.outputs.current }}" "${{ steps.diff.outputs.report }}")"
+            --body "$(printf 'Upstream hat **%s** veroeffentlicht (bisher: %s). Mindestens eine von uns gepatchte Datei hat sich geaendert:\n\n%b\n**Vorgehen**\n\n1. Neue Originaldatei ziehen und mit unserer Fassung vergleichen.\n2. Aenderung von upstream uebernehmen, unseren Patch erneut anwenden.\n3. `upstream.sha256` aktualisieren.\n4. `ARG LIBRECHAT_VERSION` im Dockerfile heben.\n\nNicht einfach den Basis-Tag hochziehen: unsere Kopie wuerde sonst die Aenderung von upstream stillschweigend ueberschreiben.' "$LATEST" "$CURRENT" "$REPORT")"
 
       - name: Zusammenfassung
         run: |

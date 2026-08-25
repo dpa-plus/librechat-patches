@@ -44,14 +44,25 @@ for dir in "$REPO_ROOT"/patches/*/; do
   fi
 done
 
-# Dateien, die als Ganzes vorliegen (Patch 001), einfach hineinkopieren.
+# Dateien, die als Ganzes vorliegen (Patch 001), hineinkopieren — aber nur,
+# wenn die Datei am angeforderten Tag noch dem Stand entspricht, gegen den der
+# Patch gebaut wurde (upstream.sha256). Sonst wuerde ein stillschweigendes
+# Kopieren Upstream-Fixes ueberschreiben, waehrend Diff-Patches oben laut
+# scheitern. Gleiche Haerte fuer beide Formen.
 for dir in "$REPO_ROOT"/patches/*/; do
   name=$(basename "$dir")
   ls "$dir"/*.patch >/dev/null 2>&1 && continue
-  while read -r _ rel; do
+  while read -r erwartet rel; do
     [ -n "$rel" ] || continue
     quelle="$dir/$(basename "$rel")"
     [ -f "$quelle" ] || continue
+    ist=$(shasum -a 256 "$DEST/$rel" 2>/dev/null | cut -d' ' -f1 || true)
+    if [ "$ist" != "$erwartet" ]; then
+      echo "  $name PASST NICHT auf $TAG:"
+      echo "      $rel hat sich upstream geaendert (sha256 weicht von upstream.sha256 ab)."
+      echo "      Ganzdatei-Patch gegen den neuen Stand neu aufsetzen, dann upstream.sha256 aktualisieren."
+      exit 1
+    fi
     cp "$quelle" "$DEST/$rel"
     echo "  $name kopiert -> $rel"
     angewendet=$((angewendet+1))

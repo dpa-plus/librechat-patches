@@ -74,7 +74,24 @@ listed them. A deployment that wants a different winner switches the loser off,
 so "what is on offer here" keeps a single source of truth.
 
 Files that no method can take are rejected with a message rather than sent down
-a path that cannot accept them.
+a path that cannot accept them — **but only once at least one `uploadMethods`
+block is configured**. With no routing configuration anywhere, an unmatched
+drop keeps upstream's behaviour and goes straight to the direct upload; the
+rejection is a routing decision and must not exist on an install that never
+opted into routing. An `unavailable` configuration (the query failed) still
+rejects: unknown is not the same as absent.
+
+Batches that arrive while the configuration is still loading are parked, and
+three rules govern the parking lot:
+
+- a parked batch is **bound to the conversation it was dropped or pasted
+  into** — after a conversation switch it is discarded with a message instead
+  of resolving against the wrong conversation's context;
+- a second drop or paste **extends** the waiting batch rather than silently
+  replacing it;
+- `fileLimit` **and `totalSizeLimit`** are pre-checked once across all routed
+  groups plus what is already attached, because the per-group validation
+  closes over a stale file list and would otherwise apply per group.
 
 The Excel case, end to end:
 
