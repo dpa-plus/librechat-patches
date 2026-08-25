@@ -194,3 +194,19 @@ index c0034d8..87e2159 100644
      parameters: z.boolean().optional(),
      multiConvo: z.boolean().optional(),
      bookmarks: z.boolean().optional(),
+diff --git a/packages/data-schemas/src/app/interface.ts b/packages/data-schemas/src/app/interface.ts
+index 143e62b..6d2964f 100644
+--- a/packages/data-schemas/src/app/interface.ts
++++ b/packages/data-schemas/src/app/interface.ts
+@@ -38,6 +38,11 @@ export async function loadDefaultInterface({
+     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
+     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
+     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
++    /**
++     * Patch 003. No default on purpose: unset means absent after
++     * removeNullishValues, and the client renders the upstream table.
++     */
++    tableCopy: interfaceConfig?.tableCopy,
+     autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
+     buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
+     contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,

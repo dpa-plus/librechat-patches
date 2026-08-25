@@ -46,6 +46,10 @@ COPY patches/001-image-resize/resize.js /app/api/server/services/Files/images/re
 # config silently without effect.
 COPY --from=client /src/client/dist /app/client/dist
 COPY --from=client /src/packages/data-provider/dist /app/packages/data-provider/dist
+# 003 also passes a key through the interface builder, which lives in
+# data-schemas. Without this copy the server keeps the old builder and drops
+# `tableCopy` on its way to the client — silently.
+COPY --from=client /src/packages/data-schemas/dist /app/packages/data-schemas/dist
 
 ARG LIBRECHAT_VERSION
 LABEL org.opencontainers.image.title="librechat-api (dpa-plus overlay)" \

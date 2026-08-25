@@ -34,8 +34,8 @@ With `tableCopy` unset the table renders character for character as upstream.
 
 | File | Purpose |
 |---|---|
-| `003-table-copy.patch` | `git diff` against `v0.8.7`, 4 files |
-| `upstream.sha256` | checksums of the 2 pre-existing files it touches |
+| `003-table-copy.patch` | `git diff` against `v0.8.7`, 5 files |
+| `upstream.sha256` | checksums of the 3 pre-existing files it touches |
 
 Touches `packages/data-provider/src/config.ts` (the `interface` schema — the
 top-level config parse is `.strict()`, so an unknown key would be a startup
