@@ -1,0 +1,99 @@
+diff --git a/packages/api/src/files/documents/html.spec.ts b/packages/api/src/files/documents/html.spec.ts
+index 6725b57..0d713ac 100644
+--- a/packages/api/src/files/documents/html.spec.ts
++++ b/packages/api/src/files/documents/html.spec.ts
+@@ -289,6 +289,31 @@ describe('Office HTML producers', () => {
+       expect(html).toContain('Sheet One');
+       expect(html).toContain('Second Sheet');
+     });
++
++    test('renders formatted date-time cells instead of Excel serial values when enabled', async () => {
++      const XLSX = await import('xlsx');
++      const worksheet = XLSX.utils.aoa_to_sheet([['Date'], [46241.51805555556]]);
++      worksheet.A2.z = 'DD.MM.YYYY HH:MM';
++      const workbook = XLSX.utils.book_new();
++      XLSX.utils.book_append_sheet(workbook, worksheet, 'Overview');
++      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
++
++      const previous = process.env.SPREADSHEET_PREVIEW_FORMAT_DATES;
++      let html = '';
++      try {
++        process.env.SPREADSHEET_PREVIEW_FORMAT_DATES = 'true';
++        html = await excelSheetToHtml(buffer);
++      } finally {
++        if (previous == null) {
++          delete process.env.SPREADSHEET_PREVIEW_FORMAT_DATES;
++        } else {
++          process.env.SPREADSHEET_PREVIEW_FORMAT_DATES = previous;
++        }
++      }
++
++      expect(html).toContain('07.08.2026 12:26');
++      expect(html).not.toContain('46241.51806');
++    });
+   });
+ 
+   describe('csvToHtml', () => {
+diff --git a/packages/api/src/files/documents/html.ts b/packages/api/src/files/documents/html.ts
+index 96e41d9..4981e3f 100644
+--- a/packages/api/src/files/documents/html.ts
++++ b/packages/api/src/files/documents/html.ts
+@@ -650,6 +650,42 @@ interface RenderedSheet {
+   totalRows: number;
+ }
+ 
++/** Enable formatted date cells in spreadsheet previews without changing the
++ * upstream rendering path for deployments that do not opt in. */
++function shouldFormatSpreadsheetDates(): boolean {
++  const value = process.env.SPREADSHEET_PREVIEW_FORMAT_DATES;
++  return value != null && /^(1|true|yes)$/i.test(value.trim());
++}
++
++/**
++ * SheetJS does not preserve formatted date text for all valid Excel formats.
++ * In particular, literal dots in formats such as `DD.MM.YYYY HH:MM` are not
++ * accepted by its SSF formatter unless they are escaped. Without an explicit
++ * display value, `sheet_to_html` falls back to the underlying Excel serial.
++ */
++function formatWorkbookDateCells(
++  workbook: import('xlsx').WorkBook,
++  XLSX: typeof import('xlsx'),
++): void {
++  for (const sheetName of workbook.SheetNames) {
++    const worksheet = workbook.Sheets[sheetName];
++    for (const [address, cell] of Object.entries(worksheet)) {
++      if (address.startsWith('!') || cell?.t !== 'd' || !(cell.v instanceof Date)) {
++        continue;
++      }
++      if (typeof cell.z !== 'string' || cell.z.length === 0) {
++        continue;
++      }
++      const safeFormat = cell.z.replace(/(?<!\\)\./g, '\\.');
++      try {
++        cell.w = XLSX.SSF.format(safeFormat, cell.v);
++      } catch {
++        // Keep SheetJS' readable default for uncommon/unsupported formats.
++      }
++    }
++  }
++}
++
+ async function renderWorkbookSheets(
+   workbook: import('xlsx').WorkBook,
+   XLSX: typeof import('xlsx'),
+@@ -770,7 +806,14 @@ export async function excelSheetToHtml(buffer: Buffer): Promise<string> {
+     await assertSafeZipSize(buffer, { name: 'spreadsheet' });
+   }
+   const XLSX = await import('xlsx');
+-  const workbook = XLSX.read(buffer, { type: 'buffer' });
++  const formatDates = shouldFormatSpreadsheetDates();
++  const workbook = XLSX.read(buffer, {
++    type: 'buffer',
++    ...(formatDates ? { cellDates: true, cellNF: true } : {}),
++  });
++  if (formatDates) {
++    formatWorkbookDateCells(workbook, XLSX);
++  }
+   const sheets = await renderWorkbookSheets(workbook, XLSX);
+   /* The per-sheet HTML from `sheet_to_html` is generally well-formed but we
+    * still sanitize it (defense in depth). The chrome (tab strip, banners) is

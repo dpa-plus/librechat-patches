@@ -2,7 +2,7 @@
 
 **File:** `api/server/services/Files/images/resize.js`
 **Applied:** yes
-**Base:** v0.8.6-rc1
+**Base:** v0.8.7
 **Upstream status:** open — [discussion #6777](https://github.com/danny-avila/LibreChat/discussions/6777) (Apr 2025), [discussion #11065](https://github.com/danny-avila/LibreChat/discussions/11065) (Dec 2025), [issue #6776](https://github.com/danny-avila/LibreChat/issues/6776)
 
 ## What upstream does
@@ -82,8 +82,11 @@ their own pixel budgets — Kimi K2.6 downscales anything above ~3.2 MP at the
 gateway, before tokenization. A full A0 sheet would need roughly 5700 px width
 for legible labels, about 16 MP, which is five times what the model accepts.
 
-Cropping to the drawing area stays mandatory. This patch only removes the
-*second*, independent ceiling that sits in front of it.
+For Kimi K2.6 alone, cropping to the drawing area remains necessary. The current
+deployment instead routes large source images to Kimi K3, which accepted and
+read the full sheet in the measured 12 MP setup. This patch still removes the
+independent LibreChat ceiling in front of either strategy; it does not add any
+vision capability itself.
 
 ## Upstream applicability
 

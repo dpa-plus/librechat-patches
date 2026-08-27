@@ -1,0 +1,48 @@
+diff --git a/client/src/components/Messages/Content/Error.tsx b/client/src/components/Messages/Content/Error.tsx
+index b464ce2..32442cf 100644
+--- a/client/src/components/Messages/Content/Error.tsx
++++ b/client/src/components/Messages/Content/Error.tsx
+@@ -74,6 +74,10 @@ const errorMessages = {
+     const { info } = json;
+     return info;
+   },
++  user_facing_error: (json: TGenericError) => {
++    const { info } = json;
++    return info;
++  },
+   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
+   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
+   [ViolationTypes.BAN]:
+diff --git a/client/src/components/Messages/Content/__tests__/Error.spec.tsx b/client/src/components/Messages/Content/__tests__/Error.spec.tsx
+new file mode 100644
+index 0000000..27f3bae
+--- /dev/null
++++ b/client/src/components/Messages/Content/__tests__/Error.spec.tsx
+@@ -0,0 +1,27 @@
++import React from 'react';
++import { render, screen } from '@testing-library/react';
++import Error from '../Error';
++
++jest.mock('~/hooks', () => ({
++  useLocalize: () => (key: string) => key,
++}));
++
++describe('message error content', () => {
++  it('renders a structured user-facing error without the generic wrapper', () => {
++    const message = 'Dieses Modell kann keine Bilder oder Pläne lesen.';
++    const payload = JSON.stringify({ code: 'user_facing_error', info: message });
++
++    render(<Error text={`An error occurred while processing the request: 400 ${payload}`} />);
++
++    expect(screen.getByText(message)).toBeInTheDocument();
++    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
++    expect(screen.queryByText(/An error occurred/)).not.toBeInTheDocument();
++  });
++
++  it('keeps the diagnostic wrapper for unknown unstructured errors', () => {
++    render(<Error text="400 Unknown provider failure" />);
++
++    expect(screen.getByText(/Something went wrong/)).toBeInTheDocument();
++    expect(screen.getByText(/Unknown provider failure/)).toBeInTheDocument();
++  });
++});

@@ -24,13 +24,17 @@ COPY patches/002-upload-routing/002-upload-routing.patch /tmp/002.patch
 COPY patches/003-table-copy/003-table-copy.patch /tmp/003.patch
 COPY patches/004-video-tool-uploads/004-video-tool-uploads.patch /tmp/004.patch
 COPY patches/005-reasoning-toggle/005-reasoning-toggle.patch /tmp/005.patch
+COPY patches/006-user-facing-errors/006-user-facing-errors.patch /tmp/006.patch
+COPY patches/007-spreadsheet-date-preview/007-spreadsheet-date-preview.patch /tmp/007.patch
 # --check first: a patch that no longer applies must fail the build loudly here,
 # not produce a silently unpatched bundle further down.
-# 005 last: it patches files 002 and 003 already touched.
+# 005 must run after 002 and 003 because it patches files they already touch.
 RUN git apply --check /tmp/002.patch && git apply /tmp/002.patch \
  && git apply --check /tmp/003.patch && git apply /tmp/003.patch \
  && git apply --check /tmp/004.patch && git apply /tmp/004.patch \
- && git apply --check /tmp/005.patch && git apply /tmp/005.patch
+ && git apply --check /tmp/005.patch && git apply /tmp/005.patch \
+ && git apply --check /tmp/006.patch && git apply /tmp/006.patch \
+ && git apply --check /tmp/007.patch && git apply /tmp/007.patch
 
 RUN npm ci --no-audit --no-fund
 # Builds data-provider, data-schemas, api, client-package and finally the client.
@@ -60,6 +64,8 @@ COPY --from=client /src/packages/data-provider/dist /app/packages/data-provider/
 # data-schemas. Without this copy the server keeps the old builder and drops
 # `tableCopy` on its way to the client — silently.
 COPY --from=client /src/packages/data-schemas/dist /app/packages/data-schemas/dist
+# 007 changes the server-side Office preview renderer in packages/api.
+COPY --from=client /src/packages/api/dist /app/packages/api/dist
 
 ARG LIBRECHAT_VERSION
 LABEL org.opencontainers.image.title="librechat-api (dpa-plus overlay)" \
@@ -67,4 +73,4 @@ LABEL org.opencontainers.image.title="librechat-api (dpa-plus overlay)" \
       org.opencontainers.image.source="https://github.com/dpa-plus/librechat-patches" \
       org.opencontainers.image.licenses="MIT" \
       eu.dpa.librechat.base-version="${LIBRECHAT_VERSION}" \
-      eu.dpa.librechat.patches="001-image-resize,002-upload-routing,003-table-copy,004-video-tool-uploads,005-reasoning-toggle"
+      eu.dpa.librechat.patches="001-image-resize,002-upload-routing,003-table-copy,004-video-tool-uploads,005-reasoning-toggle,006-user-facing-errors,007-spreadsheet-date-preview"

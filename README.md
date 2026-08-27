@@ -56,6 +56,18 @@ LibreChat, run stock LibreChat.
 | [002](./patches/002-upload-routing) | A + B | Which upload methods the attachment menu offers, per endpoint and per model spec; optionally drops the choice entirely and routes by file type | yes | [PR #11279](https://github.com/danny-avila/LibreChat/pull/11279) — draft |
 | [003](./patches/003-table-copy) | B | Copy button on markdown tables — `text/html` + TSV in one clipboard item, so Excel pastes a real table | yes | not offered yet |
 | [004](./patches/004-video-tool-uploads) | B | Video/audio uploads for a local tool sidecar, behind `uploadMethods.providerVideoAudio` | yes | not offered yet |
+| [005](./patches/005-reasoning-toggle) | B | Composer toggle for `reasoning_effort`, behind `interface.reasoningToggle` — the only way to set it once `modelSpecs` hide the parameters panel | yes | not offered yet |
+| [006](./patches/006-user-facing-errors) | B | Render explicitly structured `user_facing_error` payloads without the generic technical wrapper | yes | not offered yet |
+| [007](./patches/007-spreadsheet-date-preview) | B | Preserve workbook date formats in XLSX previews instead of displaying Excel serial values, behind `SPREADSHEET_PREVIEW_FORMAT_DATES` | yes | not offered yet |
+
+### Upstream fixes we deliberately do not carry
+
+The `@librechat/agents` version shipped with LibreChat v0.8.7 already prefers
+visible `content` when a transitional streaming chunk contains both hidden
+reasoning and visible content. Version 3.2.46 also includes a regression test
+for that exact case. Older v0.8.6-rc1 images used 3.1.86 and can lose the first
+visible chunk; the supported fix here is to upgrade the LibreChat base, not to
+overlay a sixth patch onto `node_modules`.
 
 ## The rule every patch follows
 
