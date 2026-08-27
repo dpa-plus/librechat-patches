@@ -67,7 +67,7 @@ visible `content` when a transitional streaming chunk contains both hidden
 reasoning and visible content. Version 3.2.46 also includes a regression test
 for that exact case. Older v0.8.6-rc1 images used 3.1.86 and can lose the first
 visible chunk; the supported fix here is to upgrade the LibreChat base, not to
-overlay a sixth patch onto `node_modules`.
+add another patch to `node_modules`.
 
 ## The rule every patch follows
 
@@ -119,10 +119,12 @@ rather than by archaeology.
 
 ## Versioning
 
-Tags mirror upstream: `v0.8.7-dpa.1`, `v0.8.7-dpa.2`. The base version is always
+Tags mirror upstream: `v0.8.7-dpa.3`, `v0.8.7-dpa.4`. The base version is always
 readable from the tag.
 
-Images: `ghcr.io/dpa-plus/librechat-api`.
+Images: `ghcr.io/dpa-plus/librechat-api`. The `latest` tag is convenient for
+discovery and testing; production deployments should pin an exact version tag
+or, preferably, an immutable digest.
 
 ## Deployment
 
