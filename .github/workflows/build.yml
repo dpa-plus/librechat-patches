@@ -16,9 +16,15 @@ env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/dpa-plus/librechat-api
 
+# Folge-Pushes warten auf den laufenden Lauf (Build/Deploy nie abbrechen).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
